@@ -165,8 +165,6 @@ CPostEffects::UpdateFrontBuffer(void)
 	RwCameraBeginUpdate(Scene.camera);
 }
 
-#ifdef VCS_POSTFX
-
 RwRaster *vcs_radiosity_target1, *vcs_radiosity_target2;
 static RwIm2DVertex vcsVertices[24];
 RwRect vcsRect;
@@ -186,8 +184,8 @@ RwImVertexIndex radiosityIndices[] = {
 
 RwD3D9Vertex radiosity_vcs_vertices[44];
 
-#define LIMIT (config->trailsLimit)
-#define INTENSITY (config->trailsIntensity)
+//#define LIMIT (config->trailsLimit)
+//#define INTENSITY (config->trailsIntensity)
 
 void
 makequad(RwD3D9Vertex *v, int width, int height, int texwidth = 0, int texheight = 0)
@@ -233,22 +231,24 @@ CPostEffects::Radiosity_VCS_init(void)
 	static float uOffsets[] = { -1.0f, 1.0f, 0.0f, 0.0f,   -1.0f, 1.0f, -1.0f, 1.0f };
 	static float vOffsets[] = { 0.0f, 0.0f, -1.0f, 1.0f,   -1.0f, -1.0f, 1.0f, 1.0f };
 	int i;
+	int resMult = config->trailsResolution;
 	RwUInt32 c;
 	float w, h;
+
 	if(vcs_radiosity_target1)
 		RwRasterDestroy(vcs_radiosity_target1);
-	vcs_radiosity_target1 = RwRasterCreate(256, 128, RwCameraGetRaster(Camera)->depth, rwRASTERTYPECAMERATEXTURE);
+	vcs_radiosity_target1 = RwRasterCreate(256 * resMult, 128 * resMult, RwCameraGetRaster(Scene.camera)->depth, rwRASTERTYPECAMERATEXTURE);
 	if(vcs_radiosity_target2)
 		RwRasterDestroy(vcs_radiosity_target2);
-	vcs_radiosity_target2 = RwRasterCreate(256, 128, RwCameraGetRaster(Camera)->depth, rwRASTERTYPECAMERATEXTURE);
+	vcs_radiosity_target2 = RwRasterCreate(256 * resMult, 128 * resMult, RwCameraGetRaster(Scene.camera)->depth, rwRASTERTYPECAMERATEXTURE);
 //	RwD3D9CreateVertexBuffer(stride, size, &vbuf, &offset);
 
-	w = 256;
-	h = 128;
+	w = 256 * resMult;
+	h = 128 * resMult;
 
 	// TODO: tex coords correct?
-	makequad(radiosity_vcs_vertices, 256, 128);
-	makequad(radiosity_vcs_vertices+4, RwCameraGetRaster(Camera)->width, RwCameraGetRaster(Camera)->height);
+	makequad(radiosity_vcs_vertices, 256 * resMult, 128 * resMult);
+	makequad(radiosity_vcs_vertices+4, RwCameraGetRaster(Scene.camera)->width, RwCameraGetRaster(Scene.camera)->height);
 
 	// black vertices; at 8
 	for(i = 0; i < 4; i++){
@@ -285,23 +285,25 @@ CPostEffects::Radiosity_VCS_init(void)
 void
 CPostEffects::Radiosity_VCS(int limit, int intensity)
 {
-	static int lastWidth, lastHeight;
+	static int lastWidth, lastHeight, lastConfigRes;
 	int i;
+	int resMult = config->trailsResolution;
 	RwRaster *fb;
 	RwRaster *fb1, *fb2, *tmp;
 
-	fb = RwCameraGetRaster(Camera);
-	if(lastWidth != fb->width || lastHeight != fb->height){
+	fb = RwCameraGetRaster(Scene.camera);
+	if(lastWidth != fb->width || lastHeight != fb->height || lastConfigRes != resMult){
 		Radiosity_VCS_init();
 		lastWidth = fb->width;
 		lastHeight = fb->height;
+		lastConfigRes = resMult;
 	}
 
 	RwRect r;
 	r.x = 0;
 	r.y = 0;
-	r.w = 256;
-	r.h = 128;
+	r.w = 256 * resMult;
+	r.h = 128 * resMult;
 
 	CPostEffects::ImmediateModeRenderStatesStore();
 	CPostEffects::ImmediateModeRenderStatesSet();
@@ -309,14 +311,14 @@ CPostEffects::Radiosity_VCS(int limit, int intensity)
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 	RwD3D9SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
 
-	RwCameraEndUpdate(Camera);
+	RwCameraEndUpdate(Scene.camera);
 
 	RwRasterPushContext(vcs_radiosity_target2);
 	RwRasterRenderScaled(fb, &r);
 	RwRasterPopContext();
 
-	RwCameraSetRaster(Camera, vcs_radiosity_target2);
-	RwCameraBeginUpdate(Camera);
+	RwCameraSetRaster(Scene.camera, vcs_radiosity_target2);
+	RwCameraBeginUpdate(Scene.camera);
 
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, NULL);
 	RwD3D9SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_REVSUBTRACT);
@@ -351,9 +353,9 @@ CPostEffects::Radiosity_VCS(int limit, int intensity)
 		fb2 = tmp;
 	}
 
-	RwCameraEndUpdate(Camera);
-	RwCameraSetRaster(Camera, fb);
-	RwCameraBeginUpdate(Camera);
+	RwCameraEndUpdate(Scene.camera);
+	RwCameraSetRaster(Scene.camera, fb);
+	RwCameraBeginUpdate(Scene.camera);
 
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, fb2);
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESSU, (void*)rwTEXTUREADDRESSCLAMP);
@@ -378,6 +380,7 @@ RwImVertexIndex blur_vcs_Indices[] = {
 };
 RwRaster *lastFrameBuffer;
 RwRGBA vcsblurrgb;
+RwRGBA rgbTweak;
 
 #define BLUROFFSET (2.1f)
 #define BLURINTENSITY (39.0f)
@@ -394,10 +397,10 @@ CPostEffects::Blur_VCS(void)
 	bufw = CPostEffects::pRasterFrontBuffer->width;
 	bufh = CPostEffects::pRasterFrontBuffer->height;
 
-	if(GetAsyncKeyState(VK_F7) & 0x8000){
+	/*if(GetAsyncKeyState(VK_F7) & 0x8000){
 		justInitialized = 1;
 		return;
-	}
+	}*/
 
 	if(lastWidth != bufw || lastHeight != bufh){
 		if(lastFrameBuffer)
@@ -408,8 +411,8 @@ CPostEffects::Blur_VCS(void)
 		lastHeight = bufh;
 	}
 
-	screenw = RwCameraGetRaster(Camera)->width;
-	screenh = RwCameraGetRaster(Camera)->height;
+	screenw = RwCameraGetRaster(Scene.camera)->width;
+	screenh = RwCameraGetRaster(Scene.camera)->height;
 
 	makequad(blur_vcs_vertices, screenw, screenh, bufw, bufh);
 	for(i = 0; i < 4; i++)
@@ -436,11 +439,11 @@ CPostEffects::Blur_VCS(void)
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 
 	// get current frame
-	RwCameraEndUpdate(Camera);
+	RwCameraEndUpdate(Scene.camera);
 	RwRasterPushContext(CPostEffects::pRasterFrontBuffer);
-	RwRasterRenderFast(RwCameraGetRaster(Camera), 0, 0);
+	RwRasterRenderFast(RwCameraGetRaster(Scene.camera), 0, 0);
 	RwRasterPopContext();
-	RwCameraBeginUpdate(Camera);
+	RwCameraBeginUpdate(Scene.camera);
 
 	// blur frame
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, CPostEffects::pRasterFrontBuffer);
@@ -475,17 +478,15 @@ if(0){
 	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, blur_vcs_vertices+20, 4, blur_vcs_Indices, 6);
 }
 
-	RwCameraEndUpdate(Camera);
+	RwCameraEndUpdate(Scene.camera);
 	RwRasterPushContext(lastFrameBuffer);
-	RwRasterRenderFast(RwCameraGetRaster(Camera), 0, 0);
+	RwRasterRenderFast(RwCameraGetRaster(Scene.camera), 0, 0);
 	RwRasterPopContext();
-	RwCameraBeginUpdate(Camera);
+	RwCameraBeginUpdate(Scene.camera);
 
 	RwD3D9SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
 	CPostEffects::ImmediateModeRenderStatesReStore();
 }
-
-#endif
 
 /* quad format:
  * 0--3
@@ -537,18 +538,6 @@ CPostEffects::DrawQuadSetDefaultUVs(void)
 	DrawQuadSetUVs(0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f);
 }
 
-/*
-	if(!config->doRadiosity)
-		return;
-
-	if(config->vcsTrails){
-		CPostEffects::Radiosity_VCS(intensityLimit, intensity);
-		if(config->colorFilter == 6)
-			CPostEffects::Blur_VCS();
-		return;
-	}
-*/
-
 void *blurPS, *radiosityPS;
 
 void
@@ -566,7 +555,6 @@ CPostEffects::Radiosity_shader(int intensityLimit, int filterPasses, int renderP
 		workBuffer = RwRasterCreate(pRasterFrontBuffer->width, pRasterFrontBuffer->height, pRasterFrontBuffer->depth, rwRASTERTYPECAMERATEXTURE);
 
 	RwRaster *drawBuffer = RwCameraGetRaster(Scene.camera);
-
 
 
 
@@ -666,6 +654,16 @@ CPostEffects::Radiosity(int intensityLimit, int filterPasses, int renderPasses, 
 			keystate = false;
 	}
 */
+
+	if (config->vcsTrails) {
+		CPostEffects::Radiosity_VCS(config->trailsLimit, config->trailsIntensity);
+		if (config->colorFilter == COLORFILTER_VCS)
+			CPostEffects::Blur_VCS();
+		return;
+	}
+
+	if(!config->doRadiosity)
+		return;
 
 	if(config->radiosity == 1){
 		Radiosity_shader(intensityLimit, filterPasses, renderPasses, intensity);
@@ -1209,6 +1207,7 @@ CPostEffects::ColourFilter_switch(RwRGBA rgb1, RwRGBA rgb2)
 				keystate = true;
 				if(numConfigs){
 					currentConfig = (currentConfig+1) % numConfigs;
+					CMessages__AddMessageJumpQWithNumber("skygfx~1~.ini", 500, 0, currentConfig + 1, -1, -1, -1, -1, -1, false);
 					setConfig();
 				}
 			}
@@ -1247,10 +1246,26 @@ CPostEffects::ColourFilter_switch(RwRGBA rgb1, RwRGBA rgb2)
 			rgb2pc.alpha *= 2;
 	}
 
-#ifdef VCS
+	rgb1.red *= config->rgb1Mult;
+	rgb1.green *= config->rgb1Mult;
+	rgb1.blue *= config->rgb1Mult;
+
+	rgb2.red *= config->rgb2Mult;
+	rgb2.green *= config->rgb2Mult;
+	rgb2.blue *= config->rgb2Mult;
+
 	vcsblurrgb = rgb2;
-#endif
-	switch(config->colorFilter){
+
+	int colorFilter = config->colorFilter;
+
+	// VCS trails isn't compatible with PC/PS2 color filter, falls of to VCS color filter
+	if (config->vcsTrails) {
+		if (colorFilter == COLORFILTER_PC || colorFilter == COLORFILTER_PS2) {
+			colorFilter = COLORFILTER_VCS;
+		}
+	}
+
+	switch(colorFilter){
 	case COLORFILTER_PS2:
 		CPostEffects::ColourFilter_PS2(rgb1, rgb2);
 		break;
@@ -1268,6 +1283,10 @@ CPostEffects::ColourFilter_switch(RwRGBA rgb1, RwRGBA rgb2)
 		CPostEffects::ColourFilter_Generic(rgb1pc, rgb2pc, iiiTrailsPS);
 		break;
 	case COLORFILTER_VC:
+		// this effects ignores alphas
+		CPostEffects::ColourFilter_Generic(rgb1, rgb2, vcTrailsPS);
+		break;
+	case COLORFILTER_VCS:
 		// this effects ignores alphas
 		CPostEffects::ColourFilter_Generic(rgb1, rgb2, vcTrailsPS);
 		break;

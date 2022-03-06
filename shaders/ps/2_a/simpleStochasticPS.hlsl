@@ -1,3 +1,5 @@
+#include "../../include/StochasticSamplerPS.hlsl"
+
 uniform sampler2D tex : register(s0);
 uniform float4 colorscale : register(c0);
 
@@ -10,5 +12,6 @@ struct PS_INPUT
 float4
 main(PS_INPUT IN) : COLOR
 {
-	return tex2D(tex, IN.texcoord0.xy) * IN.color * colorscale.x;
+	return tex2DStochastic(tex, IN.texcoord0.xy * 1.2) * IN.color * colorscale.x;
+	//return tex2D(tex, IN.texcoord0.xy)*IN.color*colorscale.x;
 }

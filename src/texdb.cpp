@@ -1,5 +1,5 @@
 #include "skygfx.h"
-
+#include <string>
 #include <map>
 
 
@@ -54,6 +54,7 @@ readTxt(void)
 		int hasdetail = 0;
 		int detailtile = 80;
 		int hassibling = 0;
+		int stochastic = 0;
 		start = end = buf;
 		while(end){
 			if(start[0] == '"'){
@@ -82,13 +83,15 @@ readTxt(void)
 				hassibling = atoi(start+11) != 0;
 			else if(strncmp(start, "affiliate=", 10) == 0)
 				affiliate = start+10;
+			else if(strncmp(start, "stochastic=", 11) == 0)
+				stochastic = atoi(start+11);
 
 			start = end+1;
 		}
 		if(filename){
 			if(isdetail)
 				detailTextures[isdetail] = RwTextureRead(filename, nil);
-			else if(hasdetail || alphamode || hassibling || affiliate){
+			else if(hasdetail || alphamode || hassibling || affiliate || stochastic){
 				std::string s = filename;
 				strtolower(s);
 				info = new TexInfo;
@@ -105,6 +108,8 @@ readTxt(void)
 					info->hassibling = 1;
 				if(alphamode)
 					info->alphamode = alphamode;
+				if (stochastic)
+					info->stochastic = 1;
 
 				texdb[s] = info;
 			}
@@ -189,17 +194,19 @@ TexDbFindCB(char *name)
 	if(tex){
 		TexInfo *info = FindTexInfo(name);
 		if(info){
+			bool sourceStochastic = info->stochastic;
 			if(info->affiliateTex)
 				info = info->affiliateTex;
 			if(info->hassibling){
 				static char sibling[200];
 				sprintf(sibling, "%s_%s", name, currentTxdName);
 				TexInfo *sib = FindTexInfo(sibling);
-				if(sib)
+				if (sib) 
 					info = sib;
 			}
 			if(info->affiliateTex)
 				info = info->affiliateTex;
+			if (sourceStochastic) info->stochastic = true;
 			*RWPLUGINOFFSET(TexInfo*, tex, texdbOffset) = info;
 		}
 	}

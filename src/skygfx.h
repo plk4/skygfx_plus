@@ -83,7 +83,7 @@ struct Config {
 	int radiosityIntensity;
 	int offLeft, offRight, offTop, offBottom;
 	RwBool vcsTrails;
-	int trailsLimit, trailsIntensity;
+	int trailsLimit, trailsIntensity, trailsResolution;
 	int pedShadows, stencilShadows;
 	int lightningIlluminatesWorld;
 	RwBool neoWaterDrops;
@@ -97,10 +97,12 @@ struct Config {
 	float lumaScale, lumaOffset;
 	float cbScale, cbOffset;
 	float crScale, crOffset;
+	float rgb1Mult, rgb2Mult;
 	int zwriteThreshold;
 
 	float leedsShininessMult;
 	RwBool detailMaps;
+	RwBool stochastic;
 	int envMapSize;
 
 	int radiosity;
@@ -141,9 +143,7 @@ enum {
 	COLORFILTER_MOBILE = 3,
 	COLORFILTER_III    = 4,
 	COLORFILTER_VC     = 5,
-#ifdef DEBUG
 	COLORFILTER_VCS    = 6,
-#endif
 };
 
 struct CPostEffects
@@ -263,6 +263,7 @@ struct TexInfo
 	int detailtile;
 	int alphamode;
 	int hassibling;
+	bool stochastic;
 };
 TexInfo *RwTextureGetTexDBInfo(RwTexture *tex);
 int TexDBPluginAttach(void);
@@ -282,6 +283,8 @@ void hookBuildingPipe(void);
 void D3D9Render(RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceData *instanceData);
 void D3D9RenderDual(int dual, RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceData *instancedData);
 
+void CMessages__AddMessageJumpQWithNumber(char* text, unsigned int time, unsigned short flag, int n1, int n2, int n3, int n4, int n5, int n6, bool bPreviousBrief);
+
 void fixSAMP(void);
 extern HMODULE UG_mod;
 
@@ -291,6 +294,7 @@ extern RwInt32 pdsOffset;
 ///// Shaders
 // misc
 extern void *simplePS;
+extern void *simpleStochasticPS;
 // vehicles
 extern void *vehiclePipeVS, *ps2CarFxVS;
 extern void *ps2EnvSpecFxPS;	// also used by the building pipeline
@@ -305,8 +309,8 @@ extern void *gradingPS, *contrastPS;
 extern void *blurPS, *radiosityPS;
 // building
 extern void *ps2BuildingVS, *ps2BuildingFxVS;
-extern void *xboxBuildingVS, *xboxBuildingPS;
-extern void *simpleDetailPS;
+extern void *xboxBuildingVS, *xboxBuildingPS, *xboxBuildingStochasticPS;
+extern void *simpleDetailPS, *simpleDetailStochasticPS;
 extern void *simpleFogPS;
 extern void *sphereBuildingVS;
 void CreateShaders(void);

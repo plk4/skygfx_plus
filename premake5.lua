@@ -22,8 +22,9 @@ workspace "skygfx"
 	includedirs { os.getenv("RWSDK36") }
    
 	prebuildcommands {
-		"for /R \"../shaders/ps/\" %%f in (*.hlsl) do \"%DXSDK_DIR%/Utilities/bin/x86/fxc.exe\" /T ps_2_0 /nologo /E main /Fo ../resources/cso/%%~nf.cso %%f",
-		"for /R \"../shaders/vs/\" %%f in (*.hlsl) do \"%DXSDK_DIR%/Utilities/bin/x86/fxc.exe\" /T vs_2_0 /nologo /E main /Fo ../resources/cso/%%~nf.cso %%f",
+		"for /r "../shaders/ps/2_a/" %%f in (*.hlsl) do "fxc.exe" /T ps_2_a /nologo /E main /Fo ../resources/cso/%%~nf.cso %%f",
+		"for /r "../shaders/ps/" %%f in (*.hlsl) do "fxc.exe" /T ps_2_a /nologo /E main /Fo ../resources/cso/%%~nf.cso %%f",
+		"for /r "../shaders/vs/" %%f in (*.hlsl) do "fxc.exe" /T vs_2_0 /nologo /E main /Fo ../resources/cso/%%~nf.cso %%f",
 	}
       
 project "skygfx"

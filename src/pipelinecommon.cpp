@@ -321,6 +321,7 @@ CreateShaders(void)
 	makePS(IDR_RADIOSITYPS, &radiosityPS);
 
 	makePS(IDR_SIMPLEPS, &simplePS);
+	makePS(IDR_SIMPLESTOCHASTICPS, &simpleStochasticPS);
 
 	// vehicles
 	makeVS(IDR_VEHICLEVS, &vehiclePipeVS);
@@ -340,7 +341,9 @@ CreateShaders(void)
 	makeVS(IDR_PS2BUILDINGFXVS, &ps2BuildingFxVS);
 	makeVS(IDR_XBOXBUILDINGVS, &xboxBuildingVS);
 	makePS(IDR_XBOXBUILDINGPS, &xboxBuildingPS);
+	makePS(IDR_XBOXBUILDINGSTOCHASTICPS, &xboxBuildingStochasticPS);
 	makePS(IDR_SIMPLEDETAILPS, &simpleDetailPS);
+	makePS(IDR_SIMPLEDETAILSTOCHASTICPS, &simpleDetailStochasticPS);
 	makePS(IDR_SIMPLEFOGPS, &simpleFogPS);
 	makeVS(IDR_SPHEREBUILDINGVS, &sphereBuildingVS);
 }

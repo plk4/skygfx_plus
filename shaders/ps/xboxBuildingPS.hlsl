@@ -12,6 +12,6 @@ struct PS_INPUT
 float4
 main(PS_INPUT IN) : COLOR
 {
-	return tex2D(tex0, IN.texcoord0)*IN.color +
-	       tex2D(tex1, IN.texcoord1)*IN.envcolor;
+	return tex2D(tex0, IN.texcoord0 * 0.5)*IN.color*10.0 +
+	       tex2D(tex1, IN.texcoord1 * 0.5)*IN.envcolor;
 }

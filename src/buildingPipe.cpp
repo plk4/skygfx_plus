@@ -1,8 +1,8 @@
 #include "skygfx.h"
 
 void *ps2BuildingVS, *ps2BuildingFxVS;
-void *xboxBuildingVS, *xboxBuildingPS;
-void *simpleDetailPS;
+void *xboxBuildingVS, *xboxBuildingPS, *xboxBuildingStochasticPS;
+void *simpleDetailPS, *simpleDetailStochasticPS;
 void *simpleFogPS;
 void *sphereBuildingVS;
 RxPipeline *&CCustomBuildingPipeline__ObjPipeline = *(RxPipeline**)0xC02C68;
@@ -225,9 +225,21 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *ob
 			float tile = texinfo->detailtile/10.0f;
 			RwD3D9SetPixelShaderConstant(1, &tile, 1);
 			pipeSetTexture(texinfo->detail, 2);
-			RwD3D9SetPixelShader(simpleDetailPS);
-		}else
-			RwD3D9SetPixelShader(simplePS);
+			if (texinfo->stochastic && config->stochastic) {
+				RwD3D9SetPixelShader(simpleDetailStochasticPS);
+			}
+			else {
+				RwD3D9SetPixelShader(simpleDetailPS);
+			}
+		}
+		else {
+			if (texinfo->stochastic && config->stochastic) {
+				RwD3D9SetPixelShader(simpleStochasticPS);
+			}
+			else {
+				RwD3D9SetPixelShader(simplePS);
+			}
+		}
 
 		if(material->pipeline == (RxPipeline*)TagRenderCB){
 			TagRenderCB(atomic, resEntryHeader, instancedData);
@@ -365,14 +377,31 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_Xbox(RwResEntry *repEntry, void *o
 			envXform.w = envData->GetScaleY();
 			RwD3D9SetVertexShaderConstant(REG_envXform, &envXform, 1);
 			RwD3D9SetVertexShaderConstant(REG_fxParams, &fxParams, 1);
-			RwD3D9SetPixelShader(xboxBuildingPS);
+			if (texinfo->stochastic && config->stochastic) {
+				RwD3D9SetPixelShader(xboxBuildingStochasticPS);
+			}
+			else {
+				RwD3D9SetPixelShader(xboxBuildingPS);
+			}
 		}else if(config->detailMaps && texinfo->detail){
 			float tile = texinfo->detailtile/10.0f;
 			RwD3D9SetPixelShaderConstant(1, &tile, 1);
 			pipeSetTexture(texinfo->detail, 2);
-			RwD3D9SetPixelShader(simpleDetailPS);
-		}else
-			RwD3D9SetPixelShader(simplePS);
+			if (texinfo->stochastic && config->stochastic) {
+				RwD3D9SetPixelShader(simpleDetailStochasticPS);
+			}
+			else {
+				RwD3D9SetPixelShader(simpleDetailPS);
+			}
+		}
+		else {
+			if (texinfo->stochastic && config->stochastic) {
+				RwD3D9SetPixelShader(simpleStochasticPS);
+			}
+			else {
+				RwD3D9SetPixelShader(simplePS);
+			}
+		}
 
 		if(material->pipeline == (RxPipeline*)TagRenderCB){
 			TagRenderCB(atomic, resEntryHeader, instancedData);

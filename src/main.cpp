@@ -36,6 +36,7 @@ int original_bRadiosity = 0;
 
 void *grassPixelShader;
 void *simplePS;
+void *simpleStochasticPS;
 void *gpCurrentShaderForDefaultCallbacks;
 bool gRenderingSpheremap;
 CVector reflectionCamPos;
@@ -476,6 +477,11 @@ setTextureAndColor(RpMaterial *material, RwRGBA *color)
 	if(material->texture != texture)
 		RpMaterialSetTexture(material, texture);
 	return material;
+}
+
+void CMessages__AddMessageJumpQWithNumber(char* text, unsigned int time, unsigned short flag, int n1, int n2, int n3, int n4, int n5, int n6, bool bPreviousBrief)
+{
+	((void(__cdecl*)(char*, unsigned int, unsigned short, int, int, int, int, int, int, bool))0x69E4E0)(text, time, flag, n1, n2, n3, n4, n5, n6, bPreviousBrief);
 }
 
 void __declspec(naked)
@@ -935,6 +941,7 @@ readIni(int n)
 		c->buildingPipe = 0;
 	}
 	c->detailMaps = readint(cfg.get("SkyGfx", "detailMaps", ""), 0);
+	c->stochastic = readint(cfg.get("SkyGfx", "stochasticTexturing", ""), 0);
 
 	c->ps2ModulateBuilding = readint(cfg.get("SkyGfx", "ps2ModulateBuilding", ""), config->ps2ModulateGlobal);
 	c->dualPassBuilding = readint(cfg.get("SkyGfx", "dualPassBuilding", ""), config->dualPassGlobal);
@@ -1007,9 +1014,7 @@ readIni(int n)
 		{"Mobile",  COLORFILTER_MOBILE},
 		{"III",     COLORFILTER_III},
 		{"VC",      COLORFILTER_VC},
-#ifdef VCS
 		{"VCS",     COLORFILTER_VCS},
-#endif
 		{"",        COLORFILTER_PC},
 	};
 	static StrAssoc ps2pcMap[] = {
@@ -1019,6 +1024,8 @@ readIni(int n)
 	};
 	c->colorFilter = StrAssoc::get(colorFilterMap, cfg.get("SkyGfx", "colorFilter", "").c_str());
 	ps2pcMap[2].val = c->colorFilter == COLORFILTER_PS2 ? 0 : 1;
+	c->rgb1Mult = readfloat(cfg.get("SkyGfx", "rgb1Mult", ""), 1.0f);
+	c->rgb2Mult = readfloat(cfg.get("SkyGfx", "rgb2Mult", ""), 1.0f);
 	c->infraredVision = StrAssoc::get(ps2pcMap, cfg.get("SkyGfx", "infraredVision", "").c_str());
 	c->nightVision = StrAssoc::get(ps2pcMap, cfg.get("SkyGfx", "nightVision", "").c_str());
 	c->grainFilter = StrAssoc::get(ps2pcMap, cfg.get("SkyGfx", "grainFilter", "").c_str());
@@ -1042,11 +1049,11 @@ readIni(int n)
 		{"",        1},
 	};
 	c->radiosity = StrAssoc::get(ps2shdrMap, cfg.get("SkyGfx", "radiosity", "").c_str());
-#ifdef DEBUG
+
 	c->vcsTrails = readint(cfg.get("SkyGfx", "vcsTrails", ""), 0);
 	c->trailsLimit = readint(cfg.get("SkyGfx", "trailsLimit", ""), 80);
 	c->trailsIntensity = readint(cfg.get("SkyGfx", "trailsIntensity", ""), 38);
-#endif
+	c->trailsResolution = readint(cfg.get("SkyGfx", "trailsResolution", ""), 1);
 
 	c->radiosityFilterPasses = readint(cfg.get("SkyGfx", "radiosityFilterPasses", ""), 2);
 	c->radiosityRenderPasses = readint(cfg.get("SkyGfx", "radiosityRenderPasses", ""), 1);
@@ -1096,6 +1103,7 @@ setConfig(void)
 {
 	if(currentConfig >= 0 && currentConfig < numConfigs){
 		config = &configs[currentConfig];
+
 		refreshIni();
 	}
 }
@@ -1133,6 +1141,7 @@ afterStreamIni(void)
 	X(dualPassGrass)				\
 	X(buildingPipe)				\
 	X(detailMaps)				\
+	X(stochastic)				\
 	X(vehiclePipe)				\
 	X(leedsShininessMult)				\
 	X(neoShininessMult)				\
@@ -1172,6 +1181,8 @@ afterStreamIni(void)
 	X(cbOffset)				\
 	X(crScale)				\
 	X(crOffset)				\
+	X(rgb1Mult)				\
+	X(rgb2Mult)				\
 	X(envMapSize)
 
 struct SkyGfxMenu
@@ -1271,6 +1282,7 @@ installMenu(void)
 			menu.buildingPipe = DebugMenuAddVar("SkyGFX", "Building Pipeline", &config->buildingPipe, nil, 1, BUILDING_PS2, NUMBUILDINGPIPES-1, buildPipeStr);
 			DebugMenuEntrySetWrap(menu.buildingPipe, true);
 			menu.detailMaps = DebugMenuAddVarBool32("SkyGFX", "Detail Maps", &config->detailMaps, nil);
+			menu.stochastic = DebugMenuAddVarBool32("SkyGFX", "Stochastic Texturing", &config->stochastic, nil);
 		}
 		if(iCanHasvehiclePipe){
 			menu.vehiclePipe = DebugMenuAddVar("SkyGFX", "Vehicle Pipeline", &config->vehiclePipe, nil, 1, CAR_PS2, NUMCARPIPES-1, vehPipeStr);
@@ -1328,6 +1340,9 @@ installMenu(void)
 		DebugMenuEntrySetWrap(menu.nightVision, true);
 		menu.grainFilter = DebugMenuAddVar("SkyGFX|Advanced", "Grain filter", &config->grainFilter, resetValues, 1, 0, 1, ps2pcStr);
 		DebugMenuEntrySetWrap(menu.grainFilter, true);
+
+		menu.rgb1Mult = DebugMenuAddVar("SkyGFX|Advanced", "RGB1 Mult", &config->rgb1Mult, resetValues, 1.0f, 0.0f, 10.0f);
+		menu.rgb2Mult = DebugMenuAddVar("SkyGFX|Advanced", "RGB2 Mult", &config->rgb2Mult, resetValues, 1.0f, 0.0f, 10.0f);
 
 		menu.bYCbCrFilter = DebugMenuAddVarBool8("SkyGFX|ScreenFX", "Enable YCbCr tweak", (int8_t*)&config->bYCbCrFilter, resetValues);
 		menu.lumaScale    = DebugMenuAddVar("SkyGFX|ScreenFX", "Y scale", &config->lumaScale, resetValues, 0.004f, 0.0f, 10.0f);

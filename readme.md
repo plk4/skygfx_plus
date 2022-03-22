@@ -8,6 +8,8 @@ This is a Extended alternative version maintained by me (Junior_Djjr), in short,
 
 ![](https://www.mixmods.com.br/wp-content/uploads/2021/06/gta-sa-mod-skygfx-extended-stochastic-procedural-texture-tiling-fix-1503666.jpg)
 
+![](https://www.mixmods.com.br/wp-content/uploads/2022/03/gta-sa-mod-skygfx-extended-alpha-transparency-fix-bug-9878175.jpg)
+
 [More information on MixMods.](https://www.mixmods.com.br/2022/03/sa-skygfx/)
 
 ----------

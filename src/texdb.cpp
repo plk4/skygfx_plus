@@ -55,6 +55,8 @@ readTxt(void)
 		int detailtile = 80;
 		int hassibling = 0;
 		int stochastic = 0;
+		int dualPass = 1;
+		int zwriteThreshold = 0;
 		start = end = buf;
 		while(end){
 			if(start[0] == '"'){
@@ -85,6 +87,10 @@ readTxt(void)
 				affiliate = start+10;
 			else if(strncmp(start, "stochastic=", 11) == 0)
 				stochastic = atoi(start+11);
+			else if(strncmp(start, "dualPass=", 9) == 0)
+				dualPass = atoi(start+9);
+			else if (strncmp(start, "zwriteThreshold=", 16) == 0)
+				zwriteThreshold = atoi(start + 16);
 
 			start = end+1;
 		}
@@ -110,6 +116,10 @@ readTxt(void)
 					info->alphamode = alphamode;
 				if (stochastic)
 					info->stochastic = 1;
+				if (dualPass)
+					info->dualPass = dualPass;
+				if (zwriteThreshold > 0)
+					info->zwriteThreshold = zwriteThreshold;
 
 				texdb[s] = info;
 			}

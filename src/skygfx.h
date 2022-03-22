@@ -264,6 +264,8 @@ struct TexInfo
 	int alphamode;
 	int hassibling;
 	bool stochastic;
+	bool dualPass;
+	int zwriteThreshold;
 };
 TexInfo *RwTextureGetTexDBInfo(RwTexture *tex);
 int TexDBPluginAttach(void);
@@ -281,7 +283,7 @@ int PDSPipePluginAttach(void);
 void hookVehiclePipe(void);
 void hookBuildingPipe(void);
 void D3D9Render(RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceData *instanceData);
-void D3D9RenderDual(int dual, RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceData *instancedData);
+void D3D9RenderDual(int dual, RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceData *instancedData, TexInfo *textInfo = nullptr);
 
 void CMessages__AddMessageJumpQWithNumber(char* text, unsigned int time, unsigned short flag, int n1, int n2, int n3, int n4, int n5, int n6, bool bPreviousBrief);
 

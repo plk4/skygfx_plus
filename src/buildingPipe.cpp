@@ -246,7 +246,7 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *ob
 			continue;
 		}
 
-		D3D9RenderDual(config->dualPassBuilding, resEntryHeader, instancedData);
+		D3D9RenderDual(config->dualPassBuilding, resEntryHeader, instancedData, texinfo);
 
 		// Reflection
 		if(*(int*)&material->surfaceProps.specular & 1){
@@ -408,7 +408,7 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_Xbox(RwResEntry *repEntry, void *o
 			continue;
 		}
 
-		D3D9RenderDual(config->dualPassBuilding, resEntryHeader, instancedData);
+		D3D9RenderDual(config->dualPassBuilding, resEntryHeader, instancedData, texinfo);
 	}
 	RwD3D9SetTexture(NULL, 1);
 	RwD3D9SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);

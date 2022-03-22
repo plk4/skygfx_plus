@@ -120,7 +120,7 @@ D3D9Render(RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceData *instanceDat
 }
 
 void
-D3D9RenderDual(int dual, RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceData *instanceData)
+D3D9RenderDual(int dual, RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceData *instanceData, TexInfo *texInfo)
 {
 	RwBool hasAlpha;
 	int alphafunc, alpharef;
@@ -129,9 +129,16 @@ D3D9RenderDual(int dual, RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceDat
 	RwD3D9GetRenderState(D3DRS_ALPHABLENDENABLE, &hasAlpha);
 	RwRenderStateGet(rwRENDERSTATEZWRITEENABLE, &zwrite);
 	RwRenderStateGet(rwRENDERSTATEALPHATESTFUNCTION, &alphafunc);
+	if (texInfo && !texInfo->dualPass) {
+		dual = false;
+	}
 	if(dual && hasAlpha && zwrite){
+		int zwriteThreshold = config->zwriteThreshold;
+		if (texInfo && texInfo->zwriteThreshold > 0) {
+			zwriteThreshold = texInfo->zwriteThreshold;
+		}
 		RwRenderStateGet(rwRENDERSTATEALPHATESTFUNCTIONREF, &alpharef);
-		RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTIONREF, (void*)config->zwriteThreshold);
+		RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTIONREF, (void*)zwriteThreshold);
 		RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTION, (void*)rwALPHATESTFUNCTIONGREATEREQUAL);
 		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
 		D3D9Render(resEntryHeader, instanceData);
@@ -334,6 +341,7 @@ myDefaultCallback(RpAtomic *atomic)
 		pipe = RxPipelineExecute(pipe, atomic, 1);
 	return pipe ? atomic : NULL;
 }
+
 
 void (*CTagManager__RenderTagForPC)(RpAtomic *atomic);
 void (*CTagManager__SetupAtomic_orig)(RpAtomic *atomic);
@@ -684,6 +692,32 @@ CSprite__RenderBufferedOneXLUSprite_Rotate_Aspect(float x, float y, float z, flo
 	f = 0xFF;
 	CSprite__RenderBufferedOneXLUSprite_Rotate_Aspect_orig(x, y, z, a4, a5, r, g, b, f, a10, a11, alpha);
 }
+
+WRAPPER void
+CreateRoadsignTexture_RwTextureSetName_orig(RwTexture* texture, char* name) { EAXJMP(0x7F38A0); }
+
+void CreateRoadsignTexture_RwTextureSetName(RwTexture* texture, char* name)
+{
+	TexInfo* texinfo = RwTextureGetTexDBInfo(texture);
+	texinfo->zwriteThreshold = 100;
+	CreateRoadsignTexture_RwTextureSetName_orig(texture, name);
+}
+
+WRAPPER RpAtomic*
+CreateRoadsignAtomicA_RpAtomicSetGeometry_orig(RpAtomic* atomic, RpGeometry* geometry, int sameBoundingSphere) { EAXJMP(0x749D40); }
+
+void
+CreateRoadsignAtomicA_RpAtomicSetGeometry(RpAtomic* atomic, RpGeometry* geometry, int sameBoundingSphere)
+{
+	// still not good, maybe create a new one for specially for roadsign
+	// try looking at roadsign text without roadsign plate, the text should be smooth like that
+	SetPipelineID(atomic, RSPIPE_PC_CustomBuilding_PipeID);
+	RpAtomicSetPipeline(atomic, CCustomBuildingPipeline__ObjPipeline);
+	atomic->pipeline = CCustomBuildingPipeline__ObjPipeline;
+
+	CreateRoadsignAtomicA_RpAtomicSetGeometry_orig(atomic, geometry, sameBoundingSphere);
+}
+
 
 /*
 struct CVector { float x, y, z; };
@@ -1586,6 +1620,10 @@ DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
 
 		// give vehicle pipe to upgrade parts
 		InjectHook(0x4C88F0, 0x5DA610, PATCH_JUMP);
+
+		// fix roadsign alpha
+		InjectHook(0x6FED44, CreateRoadsignTexture_RwTextureSetName);
+		InjectHook(0x6FF236, CreateRoadsignAtomicA_RpAtomicSetGeometry);
 
 		// jump over code that sets alpha ref to 140 (not on PS2).
 		// This caused skidmarks to disappear when rendering the neo reflection scene

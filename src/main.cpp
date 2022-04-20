@@ -823,6 +823,22 @@ envmaphooks();
 	InitialiseGame();
 }
 
+/*void (*StartWaterRender)(void);
+void
+StartWaterRender_hook(void)
+{
+	RwD3D9SetPixelShader(simpleStochasticPS);
+	gpCurrentShaderForDefaultCallbacks = simpleStochasticPS;
+	StartWaterRender();
+}
+
+void (*EndWaterRender)(void);
+void
+EndWaterRender_hook(void)
+{
+	EndWaterRender();
+}*/
+
 // not working yet
 //void __declspec(naked) selectVM(void)
 //{
@@ -1011,6 +1027,8 @@ readIni(int n)
 	int i = 1;
 	while(i < c->envMapSize) i *= 2;
 	c->envMapSize = i;
+	c->envMapFarClipMult = readfloat(cfg.get("SkyGfx", "envMapFarClipMult", ""), 1.0);
+	c->envMapUseLODs = readint(cfg.get("SkyGfx", "envMapUseLODs", ""), 0);
 	c->doglare = readint(cfg.get("SkyGfx", "sunGlare", ""), -1);
 	if(c->doglare < 0){
 		iCanHasSunGlare = false;
@@ -1101,6 +1119,7 @@ readIni(int n)
 	c->neoBloodDrops = readint(cfg.get("SkyGfx", "neoBloodDrops", ""), 0);
 	fixPcCarLight = readint(cfg.get("SkyGfx", "fixPcCarLight", ""), 0);
 	explicitBuildingPipe_tmp = readint(cfg.get("SkyGfx", "explicitBuildingPipe", ""), -1);
+	c->tagsBuildingPipe = StrAssoc::get(buildPipeMap, cfg.get("SkyGfx", "tagsBuildingPipe", "").c_str());
 
 	c->zwriteThreshold = readint(cfg.get("SkyGfx", "zwriteThreshold", ""), 128);
 	if(c->zwriteThreshold < 0) c->zwriteThreshold = 0;
@@ -1174,6 +1193,7 @@ afterStreamIni(void)
 	X(dualPassPed)			\
 	X(dualPassGrass)				\
 	X(buildingPipe)				\
+	X(tagsBuildingPipe)				\
 	X(detailMaps)				\
 	X(stochastic)				\
 	X(vehiclePipe)				\
@@ -1217,7 +1237,9 @@ afterStreamIni(void)
 	X(crOffset)				\
 	X(rgb1Mult)				\
 	X(rgb2Mult)				\
-	X(envMapSize)
+	X(envMapSize)			\
+	X(envMapUseLODs)			\
+	X(envMapFarClipMult)
 
 struct SkyGfxMenu
 {
@@ -1315,6 +1337,8 @@ installMenu(void)
 		if(iCanHasbuildingPipe){
 			menu.buildingPipe = DebugMenuAddVar("SkyGFX", "Building Pipeline", &config->buildingPipe, nil, 1, BUILDING_PS2, NUMBUILDINGPIPES-1, buildPipeStr);
 			DebugMenuEntrySetWrap(menu.buildingPipe, true);
+			menu.tagsBuildingPipe = DebugMenuAddVar("SkyGFX", "Tags Building Pipeline", &config->tagsBuildingPipe, nil, 1, BUILDING_PS2, NUMBUILDINGPIPES - 1, buildPipeStr);
+			DebugMenuEntrySetWrap(menu.tagsBuildingPipe, true);
 			menu.detailMaps = DebugMenuAddVarBool32("SkyGFX", "Detail Maps", &config->detailMaps, nil);
 			menu.stochastic = DebugMenuAddVarBool32("SkyGFX", "Stochastic Texturing", &config->stochastic, nil);
 		}
@@ -1323,6 +1347,8 @@ installMenu(void)
 			DebugMenuEntrySetWrap(menu.vehiclePipe, true);
 		}
 		menu.envMapSize = DebugMenuAddVar("SkyGFX", "Vehicle Env Map Size", &config->envMapSize, changeEnvMapSize, 1, 4, 2048, nil);
+		menu.envMapFarClipMult = DebugMenuAddVar("SkyGFX|Misc", "Vehicle Env Map Far Clip Mult", &config->envMapFarClipMult, nil, 0.1f, 0.0f, 10.0f);
+		//menu.envMapUseLODs = DebugMenuAddVarBool32("SkyGFX", "Vehicle Env Map Use LODs", &config->envMapUseLODs, nil);
 		menu.grassAddAmbient = DebugMenuAddVarBool32("SkyGFX", "Add Ambient to Grass", &config->grassAddAmbient, nil);
 		menu.backfaceCull = DebugMenuAddVarBool32("SkyGFX", "Grass Backface Culling", &config->backfaceCull, nil);
 		menu.pedShadows = DebugMenuAddVar("SkyGFX", "Ped Shadows", &config->pedShadows, nil, 1, -1, 1, shadStr);
@@ -1559,6 +1585,10 @@ InjectDelayedPatches()
 	//	Patch(0x6AB9C6 + 2, &flaredist);
 	//	Patch(0x6ABA13 + 2, &flaredist);
 	}
+
+	// test water shader (looks like it doesn't use shaders, need to put a new pipeline, like renderhook)
+	//InterceptCall(&StartWaterRender, StartWaterRender_hook, 0x6EF664);
+	//InterceptCall(&EndWaterRender, EndWaterRender_hook, 0x6F00BE);
 
 	installMenu();
 

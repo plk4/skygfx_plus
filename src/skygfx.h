@@ -66,6 +66,7 @@ struct Config {
 	RwBool doglare;			// fixed for doglare in main.cpp
 
 	int buildingPipe;
+	int tagsBuildingPipe;
 	RwBool ps2ModulateBuilding;
 	RwBool dualPassBuilding;
 
@@ -103,7 +104,9 @@ struct Config {
 	float leedsShininessMult;
 	RwBool detailMaps;
 	RwBool stochastic;
+	RwBool envMapUseLODs;
 	int envMapSize;
+	float envMapFarClipMult;
 
 	int radiosity;
 	int coronaZtest;

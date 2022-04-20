@@ -34,7 +34,7 @@ MakeEnvmapCam(void)
 	reflectionCam = RwCameraCreate();
 	RwCameraSetFrame(reflectionCam, RwFrameCreate());
 	RwCameraSetNearClipPlane(reflectionCam, 0.1f);
-	RwCameraSetFarClipPlane(reflectionCam, 250.0f);
+	RwCameraSetFarClipPlane(reflectionCam, 250.0f * config->envMapFarClipMult);
 	RwV2d vw;
 	vw.x = vw.y = 0.4f;
 	RwCameraSetViewWindow(reflectionCam, &vw);
@@ -390,18 +390,29 @@ void (*CRenderer__ConstructRenderList)(void);
 int &CMirrors__TypeOfMirror = *(int*)0xC7C724;
 bool &bFudgeNow = *(bool*)0xC7C72A;
 
+float &ms_lowLodDistScale = *(float*)0x8CD804;
+float &ms_lodDistScale = *(float*)0x8CD800;
+
 RwRGBAReal spheremapfog;
 void
 RenderSphereReflections(void)
 {
+
 	if(iCanHasbuildingPipe && (config->vehiclePipe == CAR_MOBILE || config->vehiclePipe == CAR_ENV)){
 		MakeEnvmapRasters();
 
 		RwCamera *cam = Scene.camera;
-		float farplane, fog;
+		float farplane, fog, lowLodDistScale, lodDistScale;
 		RwRaster *fb, *zb;
 
-		sphereRadius = 60.0f;	// TODO? ini option?
+		sphereRadius = 60.0f * config->envMapFarClipMult;
+
+		if (config->envMapUseLODs) {
+			lowLodDistScale = ms_lowLodDistScale;
+			lodDistScale = ms_lodDistScale;
+			ms_lowLodDistScale = 0.1f;
+			ms_lodDistScale = 0.12f;
+		}
 
 		fb = RwCameraGetRaster(cam);
 		zb = RwCameraGetZRaster(cam);
@@ -443,6 +454,10 @@ RenderSphereReflections(void)
 		bFudgeNow = false;
 		sphereRadius = 0.0f;
 
+		if (config->envMapUseLODs) {
+			ms_lowLodDistScale = lowLodDistScale;
+			ms_lodDistScale = lodDistScale;
+		}
 		RwCameraSetRaster(cam, fb);
 		RwCameraSetZRaster(cam, zb);
 		RwCameraSetFarClipPlane(cam, farplane);

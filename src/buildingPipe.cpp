@@ -125,7 +125,7 @@ TagRenderCB(RpAtomic *atomic, RxD3D9ResEntryHeader *resEntryHeader, RxD3D9Instan
 {
 	int alpha, alpharef;
 	RwRenderStateGet(rwRENDERSTATEALPHATESTFUNCTIONREF, (void*)&alpharef);
-	if(config->buildingPipe == BUILDING_PS2){
+	if(config->tagsBuildingPipe == BUILDING_PS2){
 		RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
 		RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDZERO);
 	}

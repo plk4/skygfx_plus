@@ -8,6 +8,9 @@ HMODULE dllModule;
 DebugMenuAPI gDebugMenuAPI;
 char asipath[MAX_PATH];
 
+extern std::map<std::string, TexInfo*> texdb;
+extern int32 texdbOffset;
+
 // Only-once settings
 //bool ps2grassFiles;
 bool disableClouds;
@@ -45,6 +48,11 @@ static int defaultColourLeftUOffset;
 static int defaultColourRightUOffset;
 static int defaultColourTopVOffset;
 static int defaultColourBottomVOffset;
+
+DWORD& TempBufferVerticesStored = *reinterpret_cast<DWORD*>(0xC4B950);
+DWORD& TempBufferIndicesStored = *reinterpret_cast<DWORD*>(0xC4B954);
+RwImVertexIndex* TempBufferRenderIndexList = reinterpret_cast<RwImVertexIndex*>(0xC4B958);
+RwIm3DVertex* TempVertexBuffer = reinterpret_cast<RwIm3DVertex*>(0xC4D958);
 
 void refreshMenu(void);
 
@@ -132,7 +140,7 @@ D3D9RenderDual(int dual, RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceDat
 	if (texInfo && !texInfo->dualPass) {
 		dual = false;
 	}
-	if(dual && hasAlpha && zwrite){
+	if (dual && hasAlpha && zwrite) {
 		int zwriteThreshold = config->zwriteThreshold;
 		if (texInfo && texInfo->zwriteThreshold > 0) {
 			zwriteThreshold = texInfo->zwriteThreshold;
@@ -698,8 +706,8 @@ CreateRoadsignTexture_RwTextureSetName_orig(RwTexture* texture, char* name) { EA
 
 void CreateRoadsignTexture_RwTextureSetName(RwTexture* texture, char* name)
 {
-	TexInfo* texinfo = RwTextureGetTexDBInfo(texture);
-	texinfo->zwriteThreshold = 100;
+	strcpy_s(texture->name, 32, "roadsign");
+	*RWPLUGINOFFSET(TexInfo*, texture, texdbOffset) = FindTexInfo("roadsign");
 	CreateRoadsignTexture_RwTextureSetName_orig(texture, name);
 }
 
@@ -821,6 +829,55 @@ envmaphooks();
 	neoInit();
 	initTexDB();
 	InitialiseGame();
+}
+
+void* RwIm3DTransform(RwIm3DVertex* pVerts, RwUInt32 numVerts, RwMatrix* ltm, RwUInt32 flags) {
+	return ((void* (__cdecl*)(RwIm3DVertex*, RwUInt32, RwMatrix*, RwUInt32))0x7EF450)(pVerts, numVerts, ltm, flags);
+}
+
+RwBool RwIm3DEnd(void) {
+	return ((RwBool(__cdecl*)(void))0x7EF520)();
+}
+
+RwBool RwIm3DRenderIndexedPrimitive(RwPrimitiveType primType, RwImVertexIndex* indices, RwInt32 numIndices) {
+	return ((RwBool(__cdecl*)(RwPrimitiveType, RwImVertexIndex*, RwInt32))0x7EF550)(primType, indices, numIndices);
+}
+
+void (*CWaterLevel__RenderAndEmptyRenderBuffer)(void);
+void
+CWaterLevel__RenderAndEmptyRenderBuffer_hook(void)
+{
+	/*if (TempBufferVerticesStored)
+	{
+		//GenerateNormals();
+		if (g_pCustomWaterPipe)
+			g_pCustomWaterPipe->RenderWater(TempVertexBuffer, TempBufferVerticesStored, TempBufferRenderIndexList, TempBufferIndicesStored);
+	}
+	TempBufferIndicesStored = 0;
+	TempBufferVerticesStored = 0;*/
+
+	_rwD3D9RenderStateFlushCache();
+
+	if (TempBufferVerticesStored) {
+		//RwD3D9SetStreamSource(0, TempVertexBuffer, 0, sizeof(RwIm3DVertex));
+		//RwD3D9SetIndices(TempBufferRenderIndexList);
+		//RwD3D9SetVertexDeclaration(TempVertexBuffer);
+		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)true);
+		RwD3D9SetPixelShader(simplePS);
+		//RwD3D9DrawIndexedPrimitive(3, (RwInt32)TempVertexBuffer, 0, TempBufferVerticesStored, 0, TempBufferIndicesStored);
+		RwD3D9DrawIndexedPrimitiveUP(3, 0, TempBufferVerticesStored, TempBufferIndicesStored, TempBufferRenderIndexList, TempVertexBuffer, sizeof(RwIm3DVertex));
+	}
+
+	/*if (TempBufferVerticesStored)
+	{
+		if (RwIm3DTransform(TempVertexBuffer, TempBufferVerticesStored, 0, 1u))
+		{
+			RwIm3DRenderIndexedPrimitive(RwPrimitiveType::rwPRIMTYPETRILIST, TempBufferRenderIndexList, TempBufferIndicesStored);
+			RwIm3DEnd();
+		}
+	}*/
+	TempBufferVerticesStored = 0;
+	TempBufferIndicesStored = 0;
 }
 
 /*void (*StartWaterRender)(void);
@@ -1586,9 +1643,14 @@ InjectDelayedPatches()
 	//	Patch(0x6ABA13 + 2, &flaredist);
 	}
 
-	// test water shader (looks like it doesn't use shaders, need to put a new pipeline, like renderhook)
+	// test water shader
 	//InterceptCall(&StartWaterRender, StartWaterRender_hook, 0x6EF664);
 	//InterceptCall(&EndWaterRender, EndWaterRender_hook, 0x6F00BE);
+
+	/*InterceptCall(&CWaterLevel__RenderAndEmptyRenderBuffer, CWaterLevel__RenderAndEmptyRenderBuffer_hook, 0x6E8790);
+	InterceptCall(&CWaterLevel__RenderAndEmptyRenderBuffer, CWaterLevel__RenderAndEmptyRenderBuffer_hook, 0x6E8EF1);
+	InterceptCall(&CWaterLevel__RenderAndEmptyRenderBuffer, CWaterLevel__RenderAndEmptyRenderBuffer_hook, 0x6E91E4);
+	InterceptCall(&CWaterLevel__RenderAndEmptyRenderBuffer, CWaterLevel__RenderAndEmptyRenderBuffer_hook, 0x6E9963);*/
 
 	installMenu();
 

@@ -21,7 +21,7 @@ strtolower(std::string &s)
 		s[i] = tolower(s[i]);
 }
 
-static TexInfo*
+TexInfo*
 FindTexInfo(char *name)
 {
 	std::string s = name;
@@ -158,6 +158,17 @@ initTexDB(void)
 	RwTexDictionarySetCurrent(detailTxd);
 
 	readTxt();
+
+	//default
+	memset(&faketexinfo, 0, sizeof(TexInfo));
+	faketexinfo.dualPass = 1;
+
+	// for roadsign texture
+	TexInfo* info = new TexInfo;
+	memset(info, 0, sizeof(TexInfo));
+	info->dualPass = 1;
+	info->zwriteThreshold = 100;
+	texdb["roadsign"] = info;
 }
 
 TexInfo*

@@ -1,14 +1,19 @@
 #include "skygfx.h"
+//#include <fstream>
 
 void *ps2BuildingVS, *ps2BuildingFxVS;
 void *xboxBuildingVS, *xboxBuildingPS, *xboxBuildingStochasticPS;
 void *simpleDetailPS, *simpleDetailStochasticPS;
 void *simpleFogPS;
 void *sphereBuildingVS;
+void *xboxBuildingWindVS, *ps2BuildingWindVS;
 RxPipeline *&CCustomBuildingPipeline__ObjPipeline = *(RxPipeline**)0xC02C68;
 RxPipeline *&CCustomBuildingDNPipeline__ObjPipeline = *(RxPipeline**)0xC02C1C;
 
 float &CWeather__WetRoads = *(float*)0xC81308;
+
+extern CVector2D windPos;
+//extern std::fstream lg;
 
 
 enum {
@@ -19,6 +24,9 @@ enum {
 	REG_directDir	= 12,	//
 	REG_matCol	= 19,
 	REG_surfProps	= 20,
+	// Wind
+	REG_windPos = 21,
+	REG_windIntensity = 22,
 
 	REG_shaderParams= 29,
 	// DN and UVA
@@ -118,6 +126,21 @@ setDnParams(RpAtomic *atomic)
 	RwD3D9SetVertexShaderConstant(REG_nightparam, nightparam, 1);
 }
 
+void
+setFoliageParams(RpAtomic *atomic, RwFrame *frame)
+{
+	CVector2D globalWindPos;
+
+	RwV3d objPos = RwFrameGetLTM(frame)->pos;
+
+	globalWindPos.x = windPos.x + objPos.x;
+	globalWindPos.y = windPos.y + objPos.y;
+	float windIntensity = 2.0f + (1.5f * CWeather__Wind);
+
+	RwD3D9SetVertexShaderConstant(REG_windPos, &globalWindPos, 1);
+	RwD3D9SetVertexShaderConstant(REG_windIntensity, &windIntensity, 1);
+}
+
 WRAPPER CBaseModelInfo *CVisibilityPlugins__GetModelInfo(RpAtomic*) { EAXJMP(0x732260); }
 
 void
@@ -161,6 +184,8 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *ob
 
 	atomic = (RpAtomic*)object;
 	RwMatrixSetIdentity(&ident);
+
+	RwFrame* frame = (RwFrame*)atomic->object.object.parent;
 
 	_rwD3D9EnableClippingIfNeeded(object, type);
 
@@ -210,7 +235,16 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *ob
 		}else
 			RwD3D9SetVertexShaderConstant(REG_texmat, &ident, 4);
 
-		hasAlpha = instancedData->vertexAlpha || instancedData->material->color.alpha != 255;
+
+		DefinedVertexShader definedVertexShader = (DefinedVertexShader)GetDefinedShader(atomic);
+
+		if (definedVertexShader == DefinedVertexShader::WIND) {
+			hasAlpha = instancedData->material->color.alpha != 255;
+		}
+		else {
+			hasAlpha = (bool)(instancedData->vertexAlpha || instancedData->material->color.alpha != 255);
+		}
+
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)hasAlpha);
 
 		pipeUploadMatCol(flags, material, REG_matCol);
@@ -218,7 +252,13 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *ob
 		RwD3D9SetVertexShaderConstant(REG_ambient, &buildingAmbient, 1);
 		RwD3D9SetVertexShaderConstant(REG_surfProps, &material->surfaceProps, 1);
 
-		RwD3D9SetVertexShader(ps2BuildingVS);
+		if (definedVertexShader == DefinedVertexShader::WIND) {
+			setFoliageParams(atomic, frame);
+			RwD3D9SetVertexShader(ps2BuildingWindVS);
+		}
+		else {
+			RwD3D9SetVertexShader(ps2BuildingVS);
+		}
 
 		TexInfo *texinfo = RwTextureGetTexDBInfo(material->texture);
 		if(config->detailMaps && texinfo->detail){
@@ -312,6 +352,8 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_Xbox(RwResEntry *repEntry, void *o
 	atomic = (RpAtomic*)object;
 	RwMatrixSetIdentity(&ident);
 
+	RwFrame* frame = (RwFrame*)atomic->object.object.parent;
+
 	_rwD3D9EnableClippingIfNeeded(object, type);
 
 	colorScale = 1.0f;
@@ -327,12 +369,23 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_Xbox(RwResEntry *repEntry, void *o
 	_rwD3D9SetStreams(resEntryHeader->vertexStream, resEntryHeader->useOffsets);
 	RwD3D9SetVertexDeclaration(resEntryHeader->vertexDeclaration);
 
+
+	DefinedVertexShader definedVertexShader = (DefinedVertexShader)GetDefinedShader(atomic);
+
 	setDnParams(atomic);
 
 	CustomBuildingEnvMapPipeline__SetupEnv(atomic, NULL, &envmat);
 	RwD3D9SetVertexShaderConstant(REG_envmat, &envmat, 3);
 
-	RwD3D9SetVertexShader(xboxBuildingVS);
+	bool vertexAlphaIsAlpha = true;
+	if (definedVertexShader == DefinedVertexShader::WIND) {
+		vertexAlphaIsAlpha = false;
+		setFoliageParams(atomic, frame);
+		RwD3D9SetVertexShader(xboxBuildingWindVS);
+	}
+	else {
+		RwD3D9SetVertexShader(xboxBuildingVS);
+	}
 
 	for(numMeshes = resEntryHeader->numMeshes; numMeshes--; instancedData++){
 		material = instancedData->material;
@@ -349,11 +402,16 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_Xbox(RwResEntry *repEntry, void *o
 		}else
 			RwD3D9SetVertexShaderConstant(REG_texmat, &ident, 4);
 
-		hasAlpha = instancedData->vertexAlpha || instancedData->material->color.alpha != 255;
+		if (vertexAlphaIsAlpha) {
+			hasAlpha = (bool)(instancedData->vertexAlpha || instancedData->material->color.alpha != 255);
+		}
+		else {
+			hasAlpha = instancedData->material->color.alpha != 255;
+		}
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)hasAlpha);
 
 		RwD3D9SetVertexShaderConstant(REG_ambient, &buildingAmbient, 1);
-
+		
 		if(flags & rpGEOMETRYLIGHT){
 			pipeUploadMatCol(flags, material, REG_matCol);
 			RwD3D9SetVertexShaderConstant(REG_surfProps, &material->surfaceProps, 1);

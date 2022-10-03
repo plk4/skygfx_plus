@@ -3,6 +3,7 @@
 #include "ini_parser.hpp"
 #include "debugmenu_public.h"
 #include "ModuleList.hpp"
+//#include <fstream>
 
 HMODULE dllModule;
 DebugMenuAPI gDebugMenuAPI;
@@ -10,6 +11,7 @@ char asipath[MAX_PATH];
 
 extern std::map<std::string, TexInfo*> texdb;
 extern int32 texdbOffset;
+//std::fstream lg;
 
 // Only-once settings
 //bool ps2grassFiles;
@@ -25,6 +27,7 @@ bool iCanHasvehiclePipe = true;
 bool iCanHasSunGlare = true;
 
 bool privateHooks;
+bool forceWindShader;
 
 int fixingSAMP;
 HMODULE UG_mod;
@@ -40,7 +43,8 @@ int original_bRadiosity = 0;
 void *grassPixelShader;
 void *simplePS;
 void *simpleStochasticPS;
-void *gpCurrentShaderForDefaultCallbacks;
+void *gpCurrentPixelShaderForDefaultCallbacks;
+void *gpCurrentVertexShaderForDefaultCallbacks;
 bool gRenderingSpheremap;
 CVector reflectionCamPos;
 
@@ -53,6 +57,8 @@ DWORD& TempBufferVerticesStored = *reinterpret_cast<DWORD*>(0xC4B950);
 DWORD& TempBufferIndicesStored = *reinterpret_cast<DWORD*>(0xC4B954);
 RwImVertexIndex* TempBufferRenderIndexList = reinterpret_cast<RwImVertexIndex*>(0xC4B958);
 RwIm3DVertex* TempVertexBuffer = reinterpret_cast<RwIm3DVertex*>(0xC4D958);
+
+CVector2D windPos;
 
 void refreshMenu(void);
 
@@ -276,7 +282,7 @@ grassRenderCallback(RpAtomic *atomic)
 	RwRGBAReal color = { 0.0f, 0.0, 1.0f, 1.0f };
 
 	if(config->ps2ModulateGrass){
-		gpCurrentShaderForDefaultCallbacks = grassPixelShader;
+		gpCurrentPixelShaderForDefaultCallbacks = grassPixelShader;
 		RwRGBARealFromRwRGBA(&color, &atomic->geometry->matList.materials[0]->color);
 		RwD3D9SetPixelShaderConstant(0, &color, 1);
 	}
@@ -312,7 +318,7 @@ grassRenderCallback(RpAtomic *atomic)
 
 
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)cullmode);
-	gpCurrentShaderForDefaultCallbacks = NULL;
+	gpCurrentPixelShaderForDefaultCallbacks = NULL;
 
 	return ret;
 }
@@ -552,7 +558,7 @@ rxD3D9DefaultRenderCallback_Hook(void)
 {
 	_asm
 	{
-		mov	ecx, [gpCurrentShaderForDefaultCallbacks]
+		mov	ecx, [gpCurrentPixelShaderForDefaultCallbacks]
 		cmp	eax, ecx	// _rwD3D9LastPixelShaderUsed
 		je	rxD3D9DefaultRenderCallback_Hook_Return
 		mov	dword ptr ds:[8E244Ch], ecx
@@ -564,6 +570,28 @@ rxD3D9DefaultRenderCallback_Hook(void)
 
 	rxD3D9DefaultRenderCallback_Hook_Return:
 		push	756E17h
+		retn
+	}
+}
+
+void __declspec(naked)
+rxD3D9DefaultRenderCallback_VertexShaderHook(void)
+{
+	_asm
+	{
+		mov	eax, ecx
+		mov	ecx, [gpCurrentVertexShaderForDefaultCallbacks]
+		cmp	eax, ecx	// _rwD3D9LastVertexShaderUsed
+		je	rxD3D9DefaultRenderCallback_VertexShaderHook_Return
+		mov	dword ptr ds : [8E2448h] , ecx
+		push	ecx
+		mov	eax, dword ptr ds : [0C97C28h]	// RwD3D9Device
+		push	eax
+		mov	ecx, [eax]
+		call	dword ptr[ecx + 170h]
+
+		rxD3D9DefaultRenderCallback_VertexShaderHook_Return :
+		push	7572E7h
 		retn
 	}
 }
@@ -786,8 +814,17 @@ RenderScene_before(void*)
 	// Do this because far and fog plane are set AFTER calling BeingUpdate in Idle()
 	RwCameraEndUpdate(Scene.camera);
 	RwCameraBeginUpdate(Scene.camera);
+
+	// update wind
+	float freq = 0.01f;
+	float modifierX = freq + (freq * CWeather__WindDir.x);
+	float modifierY = freq + (freq * CWeather__WindDir.y);
+	windPos.x += modifierX * CTimer__ms_fTimeStep;
+	windPos.y += modifierY * CTimer__ms_fTimeStep;
+
 	return true;
 }
+
 bool
 RenderScene_after(void*)
 {
@@ -810,7 +847,7 @@ int (*PipelinePluginAttach)(void);
 int
 myPluginAttach(void)
 {
-	return PipelinePluginAttach() && PDSPipePluginAttach() && TexDBPluginAttach();
+	return (bool)(PipelinePluginAttach() && PDSPipePluginAttach() && TexDBPluginAttach() && EDEDPluginAttach());
 }
 
 void (*InitialiseGame)(void);
@@ -824,6 +861,11 @@ InitialiseGame_hook(void)
 		UG_RegisterEventCallback("EVENT_BEFORE_RENDERSCENE", RenderScene_before);
 		UG_RegisterEventCallback("EVENT_AFTER_RENDERSCENE", RenderScene_after);
 	}
+
+	/*lg.open("skygfx.log", std::fstream::out | std::fstream::trunc);
+	lg << "test" << "\n";
+	lg.flush();*/
+
 void envmaphooks(void);
 envmaphooks();
 	neoInit();
@@ -885,7 +927,7 @@ void
 StartWaterRender_hook(void)
 {
 	RwD3D9SetPixelShader(simpleStochasticPS);
-	gpCurrentShaderForDefaultCallbacks = simpleStochasticPS;
+	gpCurrentPixelShaderForDefaultCallbacks = simpleStochasticPS;
 	StartWaterRender();
 }
 
@@ -1194,6 +1236,7 @@ readIni(int n)
 
 
 	privateHooks = readint(cfg.get("SkyGfx", "privateHooks", ""), 0);
+	if (readint(cfg.get("SkyGfx", "forceWindShader", ""), 0) == 1) forceWindShader = true;
 }
 
 void
@@ -1702,6 +1745,7 @@ DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
 
 		InjectHook(0x5BF8EA, CPlantMgr_Initialise);
 		InjectHook(0x756DFE, rxD3D9DefaultRenderCallback_Hook, PATCH_JUMP);
+		//InjectHook(0x7572CC, rxD3D9DefaultRenderCallback_VertexShaderHook, PATCH_JUMP);
 		InjectHook(0x5DADB7, fixSeed, PATCH_JUMP);
 		InjectHook(0x5DAE61, saveIntensity, PATCH_JUMP);
 		Patch(0x5DAEC8, setTextureAndColor);

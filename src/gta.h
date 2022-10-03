@@ -15,6 +15,11 @@ struct CVector
 	float x, y, z;
 };
 
+struct CVector2D
+{
+	float x, y;
+};
+
 struct CMatrix
 {
 	RwMatrix matrix;
@@ -160,6 +165,8 @@ CPlaceable *FindPlayerPed(int);
 extern float &CTimer__ms_fTimeStep;
 extern CCamera &TheCamera;
 extern float &CWeather__Rain;
+extern float& CWeather__Wind;
+extern CVector& CWeather__WindDir;
 extern float &CWeather__UnderWaterness;
 extern bool &CCutsceneMgr__ms_running;
 extern int* CGame__currArea;
@@ -344,3 +351,6 @@ enum RockstarPipelineIDs
 
 uint32 GetPipelineID(RpAtomic *atomic);
 void SetPipelineID(RpAtomic *atomic, uint32 id);
+
+uint8 GetDefinedShader(RpAtomic* atomic);
+void SetDefinedShader(RpAtomic* atomic, uint8 shader);

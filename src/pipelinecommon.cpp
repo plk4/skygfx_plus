@@ -1,5 +1,6 @@
 
 #include "skygfx.h"
+#include "d3d9helper.h"
 #include <DirectXMath.h>
 
 typedef D3DMATRIX D3DXMATRIX;
@@ -15,6 +16,10 @@ D3DMATRIX D3D9WorldViewTransform;	/* not in RW */
 WRAPPER D3DXMATRIX *__stdcall D3DXMatrixMultiply(D3DXMATRIX*, const D3DXMATRIX*, const D3DXMATRIX*) { EAXJMP(0x7672E1); }
 WRAPPER D3DXMATRIX *__stdcall D3DXMatrixMultiplyTranspose(D3DXMATRIX*, const D3DXMATRIX*, const D3DXMATRIX*) { EAXJMP(0x7676C7); }
 WRAPPER D3DXMATRIX *__stdcall D3DXMatrixTranspose(D3DXMATRIX*, const D3DXMATRIX*) { EAXJMP(0x7675EE); }
+
+//int __stdcall D3DXCompileShaderFromFileA(LPCSTR lpFileName, int a2, int a3, const char *a4, const char *a5, unsigned int a6, struct ID3DXBuffer **a7, int a8, struct ID3DXConstantTable **a9)
+//v1 = D3DXCompileShaderFromFileA(FileName, 0, 0, "main", "ps_2_0", 1, &shader, &errors, v8);
+WRAPPER int D3DXCompileShaderFromFileA(LPCSTR lpFileName, int a2, int a3, const char* a4, const char* a5, unsigned int a6, RwUInt32* shader, int* errors, struct ID3DXConstantTable** a9) { EAXJMP(0x7FAC60); }
 
 /* Fixed RW function */
 void
@@ -310,6 +315,35 @@ makeVS(int res, void **sh)
 }
 
 void
+makeVSfromFile(char* fileName, void** sh)
+{
+	if (*sh == NULL) {
+		char* path = getpath("shaders\\test.fx");
+		if (path == NULL)
+			return;
+
+		RwUInt32 ppShader;
+
+		int buildResult = D3DXCompileShaderFromFileA(path, NULL, NULL, "main", "vs_2_0", 1, &ppShader, NULL, NULL);
+
+		if (buildResult == D3D_OK)
+		{
+			//int v6 = (*(int(__stdcall**)(int, void*))(*(RwUInt32*)ppShader + 12))(ppShader, &xboxBuildingWindVS);
+			int v177 = (*(int(__stdcall**)(int))(*(RwUInt32*)ppShader + 12))(ppShader);
+			//RwD3D9CreateVertexShader((RwUInt32 *)shaderData, sh);
+			if (buildResult || *sh == NULL) {
+				MessageBox(nil, "Fail RwD3D9CreateVertexShader", "Error", MB_ICONERROR | MB_OK);
+			}
+		}
+		else {
+			//xboxBuildingWindVS = nullptr;
+			MessageBox(nil, "Fail D3DXCompileShaderFromFileA", "Error", MB_ICONERROR | MB_OK);
+		}
+
+	}
+}
+
+void
 CreateShaders(void)
 {
 	// postfx
@@ -346,4 +380,10 @@ CreateShaders(void)
 	makePS(IDR_SIMPLEDETAILSTOCHASTICPS, &simpleDetailStochasticPS);
 	makePS(IDR_SIMPLEFOGPS, &simpleFogPS);
 	makeVS(IDR_SPHEREBUILDINGVS, &sphereBuildingVS);
+
+	makeVS(IDR_XBOXBUILDINGWINDVS, &xboxBuildingWindVS);
+	makeVS(IDR_PS2BUILDINGWINDVS, &ps2BuildingWindVS);
+
+	// custom
+	//makeVSfromFile("test.fx", &xboxBuildingWindVS);
 }

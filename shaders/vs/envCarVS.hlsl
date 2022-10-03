@@ -37,18 +37,18 @@ struct VS_OUTPUT {
 
 VS_OUTPUT
 main(VS_INPUT IN)
-{	
+{
 	VS_OUTPUT OUT;
 	OUT.Position = mul(IN.Position, combined);
 	OUT.Texcoord0 = IN.Texcoord0;
 
-	OUT.Color = float4(IN.Color.rgb*surfPrelight, 1.0);
-	OUT.Color.xyz += ambient*surfAmb;
-	for(int i = 0; i < 7; i++){
+	OUT.Color = float4(IN.Color.rgb * surfPrelight, 1.0);
+	OUT.Color.xyz += ambient * surfAmb;
+	for (int i = 0; i < 7; i++) {
 		float l = max(0.0, dot(IN.Normal, -directDir[i]));
-		OUT.Color.xyz += l*directCol[i]*surfDiff;
+		OUT.Color.xyz += l * directCol[i] * surfDiff;
 	}
-	OUT.Color = saturate(OUT.Color)*matCol;
+	OUT.Color = saturate(OUT.Color) * matCol;
 
 	float4 WorldPos = mul(IN.Position, world);
 	float3 WorldNormal = normalize(mul(IN.Normal, (float3x3)world));
@@ -58,7 +58,7 @@ main(VS_INPUT IN)
 
 	// reflection intensity
 	float b = 1.0 - saturate(dot(-ViewVector, WorldNormal));
-	OUT.EnvColor = lerp(1.0f, b*b*b*b*b, fresnel)*shininess;
+	OUT.EnvColor = lerp(1.0f, b * b * b * b * b, fresnel) * shininess;
 
 	return OUT;
 }

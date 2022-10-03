@@ -19,6 +19,8 @@ float *ambientColors = (float*)0xB7C4A0;
 float &CTimer__ms_fTimeStep = *(float*)0xB7CB5C;
 CCamera &TheCamera = *(CCamera*)0xB6F028;
 float &CWeather__Rain = *(float*)(0xC81324);
+float &CWeather__Wind = *(float*)(0xC812F0);
+CVector &CWeather__WindDir = *(CVector*)(0xC813E0);
 float &CWeather__UnderWaterness = *(float*)(0xC8132C);
 bool &CCutsceneMgr__ms_running = *(bool*)(0xB5F851);
 int* CGame__currArea = (int*)0xB72914;
@@ -68,8 +70,9 @@ WRAPPER RwInt32 RpMaterialRegisterPlugin(RwInt32, RwUInt32, RwPluginObjectConstr
 WRAPPER RwInt32 RpMaterialSetStreamRightsCallBack(RwUInt32, RwPluginDataChunkRightsCallBack) { EAXJMP(0x74DC70); }
 WRAPPER RwInt32 RpAtomicRegisterPlugin(RwInt32, RwUInt32, RwPluginObjectConstructor,
 	RwPluginObjectDestructor, RwPluginObjectCopy) { EAXJMP(0x74BDA0); }
+WRAPPER RwInt32 RpAtomicRegisterPluginStream(RwUInt32, RwPluginDataChunkReadCallBack, RwPluginDataChunkWriteCallBack, RwPluginDataChunkGetSizeCallBack) { EAXJMP(0x74BE00); }
 WRAPPER RwInt32 RpAtomicSetStreamRightsCallBack(RwUInt32, RwPluginDataChunkRightsCallBack) { EAXJMP(0x74BE50); }
-
+WRAPPER RwUInt32 RwStreamRead(RwStream* stream, void* buffer, RwUInt32 length) { EAXJMP(0x7EC9D0); }
 
 WRAPPER RpMatFXMaterialFlags RpMatFXMaterialGetEffects(const RpMaterial*) { EAXJMP(0x812140); }
 WRAPPER const RpMaterial *RpMatFXMaterialGetUVTransformMatrices(const RpMaterial*, RwMatrix**, RwMatrix**) { EAXJMP(0x812A50); }
@@ -110,7 +113,7 @@ WRAPPER RwUInt32 _rpD3D9VertexDeclarationInstV2d(RwUInt32 type, RwUInt8 *mem, co
 WRAPPER RwBool _rpD3D9VertexDeclarationInstColor(RwUInt8 *mem, const RwRGBA *color, RwInt32 numVerts, RwUInt32 stride) { EAXJMP(0x754AE0); };
 WRAPPER RwBool RwD3D9SetRenderTarget(RwUInt32 index, RwRaster *raster) { EAXJMP(0x7F9E90); };
 
-WRAPPER void _rxPipelineDestroy(RxPipeline * Pipeline) { EAXJMP(0x805820); }
+WRAPPER void _rxPipelineDestroy(RxPipeline * Pipeline) { EAXJMP(0x76534D); }
 WRAPPER RxPipeline *RxPipelineCreate(void) { EAXJMP(0x8057B0); }
 WRAPPER RxPipeline *RxPipelineExecute(RxPipeline *pipeline, void *data, RwBool heapReset) { EAXJMP(0x805710); };
 WRAPPER RxLockedPipe *RxPipelineLock(RxPipeline *pipeline) { EAXJMP(0x806990); }
@@ -133,6 +136,7 @@ WRAPPER RwUInt16 CVisibilityPlugins__GetAtomicId(RpAtomic *atomic) { EAXJMP(0x73
 
 WRAPPER RpAtomic *CCustomCarEnvMapPipeline__CustomPipeAtomicSetup(RpAtomic *atomic) { EAXJMP(0x5DA610); }
 WRAPPER char *GetFrameNodeName(RwFrame *frame) { EAXJMP(0x72FB30); }
+WRAPPER int gtaGetPipelineID(RpAtomic* atomic) { EAXJMP(0x72FC40); }
 WRAPPER RpAtomic *AtomicDefaultRenderCallBack(RpAtomic*) { EAXJMP(0x7491C0); };
 WRAPPER void CCustomCarEnvMapPipeline__CustomPipeRenderCB_exe(RwResEntry *repEntry, void *object, RwUInt8 type, RwUInt32 flags) { EAXJMP(0x5D9900) };
 WRAPPER void GTAfree(void *data) { EAXJMP(0x82413F); }

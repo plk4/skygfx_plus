@@ -59,6 +59,14 @@ enum BuildingPipeline
 	NUMBUILDINGPIPES
 };
 
+enum DefinedVertexShader
+{
+	DEFAULT,
+	WIND,
+
+	NUMSHADERS
+};
+
 struct Config {
 	// these are at fixed offsets
 	int version;			// for other modules
@@ -261,14 +269,14 @@ struct TexInfo
 	char *name;	// not strictly needed
 	char *affiliate;
 	TexInfo *affiliateTex;
-	int detailnum;
+	uint8 detailnum;
 	RwTexture *detail;
-	int detailtile;
-	int alphamode;
-	int hassibling;
+	uint8 detailtile;
+	uint8 alphamode;
+	bool hassibling;
 	bool stochastic;
 	bool dualPass;
-	int zwriteThreshold;
+	uint8 zwriteThreshold;
 };
 TexInfo *RwTextureGetTexDBInfo(RwTexture *tex);
 int TexDBPluginAttach(void);
@@ -283,6 +291,7 @@ void TagRenderCB(RpAtomic *atomic, RxD3D9ResEntryHeader *resEntryHeader, RxD3D9I
 RxPipeline *CCustomBuildingPipeline__CreateCustomObjPipe_PS2(void);
 RxPipeline *CCustomBuildingDNPipeline__CreateCustomObjPipe_PS2(void);
 int PDSPipePluginAttach(void);
+int EDEDPluginAttach(void);
 void hookVehiclePipe(void);
 void hookBuildingPipe(void);
 void D3D9Render(RxD3D9ResEntryHeader *resEntryHeader, RxD3D9InstanceData *instanceData);
@@ -319,6 +328,7 @@ extern void *xboxBuildingVS, *xboxBuildingPS, *xboxBuildingStochasticPS;
 extern void *simpleDetailPS, *simpleDetailStochasticPS;
 extern void *simpleFogPS;
 extern void *sphereBuildingVS;
+extern void *xboxBuildingWindVS, *ps2BuildingWindVS;
 void CreateShaders(void);
 void RwToD3DMatrix(void *d3d, RwMatrix *rw);
 void MakeProjectionMatrix(void *d3d, RwCamera *cam, float nbias = 0.0f, float fbias = 0.0f);
@@ -359,6 +369,7 @@ RwBool D3D9RestoreSurfaceProperties(void);
 RwUInt16 CVisibilityPlugins__GetAtomicId(RpAtomic *atomic);
 RpAtomic *CCustomCarEnvMapPipeline__CustomPipeAtomicSetup(RpAtomic *atomic);
 char *GetFrameNodeName(RwFrame *frame);
+int gtaGetPipelineID(RpAtomic* atomic);
 RpAtomic *AtomicDefaultRenderCallBack(RpAtomic*);
 void CCustomCarEnvMapPipeline__CustomPipeRenderCB_exe(RwResEntry *repEntry, void *object, RwUInt8 type, RwUInt32 flags);
 void GTAfree(void *data);

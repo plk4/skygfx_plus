@@ -127,7 +127,7 @@ setDnParams(RpAtomic *atomic)
 }
 
 void
-setFoliageParams(RpAtomic *atomic, RwFrame *frame)
+setWindParams(RpAtomic *atomic, RwFrame *frame)
 {
 	CVector2D globalWindPos;
 
@@ -252,8 +252,8 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *ob
 		RwD3D9SetVertexShaderConstant(REG_ambient, &buildingAmbient, 1);
 		RwD3D9SetVertexShaderConstant(REG_surfProps, &material->surfaceProps, 1);
 
-		if (definedVertexShader == DefinedVertexShader::WIND) {
-			setFoliageParams(atomic, frame);
+		if (definedVertexShader == DefinedVertexShader::WIND && instancedData->vertexAlpha) {
+			setWindParams(atomic, frame);
 			RwD3D9SetVertexShader(ps2BuildingWindVS);
 		}
 		else {
@@ -380,7 +380,7 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_Xbox(RwResEntry *repEntry, void *o
 	bool vertexAlphaIsAlpha = true;
 	if (definedVertexShader == DefinedVertexShader::WIND) {
 		vertexAlphaIsAlpha = false;
-		setFoliageParams(atomic, frame);
+		setWindParams(atomic, frame);
 		RwD3D9SetVertexShader(xboxBuildingWindVS);
 	}
 	else {

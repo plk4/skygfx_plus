@@ -108,6 +108,7 @@ struct Config {
 	float crScale, crOffset;
 	float rgb1Mult, rgb2Mult;
 	int zwriteThreshold;
+	int zwriteThresholdGrass;
 
 	float leedsShininessMult;
 	RwBool detailMaps;

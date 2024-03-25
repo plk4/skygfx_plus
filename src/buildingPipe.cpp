@@ -179,6 +179,7 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *ob
 	} fxParams;
 	RwV4d envXform;
 	RwMatrix envmat;
+	RwV3d eye;
 	float transform[16];
 	RwMatrix ident, *m1, *m2;
 
@@ -203,6 +204,16 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *ob
 
 	CustomBuildingEnvMapPipeline__SetupEnv(atomic, NULL, &envmat);
 	RwD3D9SetVertexShaderConstant(REG_envmat, &envmat, 3);
+
+
+	//for gloss
+	eye = RwFrameGetLTM(RwCameraGetFrame((RwCamera*)RWSRCGLOBAL(curCamera)))->pos;
+	RwD3D9SetVertexShaderConstant(34, &eye, 1);
+	RwD3D9SetPixelShaderConstant(2, &eye, 1);
+
+	pipeUploadLightColorPS(pDirect, REG_directCol);
+	pipeUploadLightDirectionPS(pDirect, REG_directDir);
+
 
 	int alphafunc, alpharef;
 	int src, dst;
@@ -539,7 +550,7 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_Sphere(RwResEntry *repEntry, void 
 		}else
 			RwD3D9SetVertexShaderConstant(REG_texmat, &ident, 4);
 
-		hasAlpha = instancedData->vertexAlpha || instancedData->material->color.alpha != 255;
+		hasAlpha = instancedData->vertexAlpha == true || instancedData->material->color.alpha != 255;
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)hasAlpha);
 
 		pipeUploadMatCol(flags, material, REG_matCol);

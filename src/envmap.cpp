@@ -240,10 +240,11 @@ CRenderer::RenderFadingInBuildings(void)
 void
 RenderReflectionScene(void)
 {
-	if(CCutsceneMgr__ms_running)
+	reflectionCamPos = TheCamera.GetPosition(); //use camera position for reflections, like any other game as GTA V, makes much more sense than default skygfx that uses player pos
+	/*if (CCutsceneMgr__ms_running)
 		reflectionCamPos = TheCamera.GetPosition();
 	else
-		reflectionCamPos = FindPlayerPed(-1)->GetPosition();
+		reflectionCamPos = FindPlayerPed(-1)->GetPosition();*/
 
 	DefinedState();
 	/* We do have fog for the sphere map but we have to calculate it ourselves  */

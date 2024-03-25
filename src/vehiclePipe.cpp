@@ -438,7 +438,7 @@ CCustomCarEnvMapPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *obj
 
 		pipeSetTexture(material->texture, 0);
 
-		hasAlpha = instancedData->vertexAlpha || instancedData->material->color.alpha != 255;
+		hasAlpha = instancedData->vertexAlpha == true || instancedData->material->color.alpha != 255;
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)hasAlpha);
 
 		pipeUploadMatCol(flags, material, REG_matCol);
@@ -830,7 +830,7 @@ CCustomCarEnvMapPipeline__CustomPipeRenderCB_Xbox(RwResEntry *repEntry, void *ob
 		hasEnv2  = (materialFlags & 2) && !noFx && (flags & rpGEOMETRYTEXTURED2);
 		hasSpec  = (materialFlags & 4) && !noFx && !renderingWheel;
 
-		hasAlpha = instancedData->vertexAlpha || instancedData->material->color.alpha != 255;
+		hasAlpha = instancedData->vertexAlpha == true || instancedData->material->color.alpha != 255;
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)hasAlpha);
 
 		RwD3D9SetTexture(NULL, 1);
@@ -1009,7 +1009,7 @@ CCustomCarEnvMapPipeline__CustomPipeRenderCB_leeds(RwResEntry *repEntry, void *o
 
 		pipeSetTexture(material->texture, 0);
 
-		hasAlpha = instancedData->vertexAlpha || instancedData->material->color.alpha != 255;
+		hasAlpha = instancedData->vertexAlpha == true || instancedData->material->color.alpha != 255;
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)hasAlpha);
 
 		pipeUploadMatCol(flags, material, REG_matCol);
@@ -1280,6 +1280,9 @@ CCustomCarEnvMapPipeline__CustomPipeRenderCB_Env(RwResEntry *repEntry, void *obj
 	else
 		uploadNoLights();
 
+	//CVector *sunPos = (CVector*)(*(DWORD*)0xB79FD0 * 12 + 0xB7CA50);
+	//RwD3D9SetPixelShaderConstant(3, &sunPos, 1);
+
 	resEntryHeader = (RxD3D9ResEntryHeader *)(repEntry + 1);
 	instancedData = (RxD3D9InstanceData *)(resEntryHeader + 1);
 	if(resEntryHeader->indexBuffer != NULL)
@@ -1327,7 +1330,7 @@ CCustomCarEnvMapPipeline__CustomPipeRenderCB_Env(RwResEntry *repEntry, void *obj
 
 		pipeSetTexture(material->texture, 0);
 
-		hasAlpha = instancedData->vertexAlpha || instancedData->material->color.alpha != 255;
+		hasAlpha = instancedData->vertexAlpha == true || instancedData->material->color.alpha != 255;
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)hasAlpha);
 
 		envData = *GETENVMAP(material);

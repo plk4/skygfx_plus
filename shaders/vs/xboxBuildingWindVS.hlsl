@@ -49,9 +49,7 @@ float noise(float2 x)
 	float n = p.x + p.y * 57.0;
 
 	return lerp(lerp(hash(n + 0.0), hash(n + 1.0), f.x),
-				lerp(hash(n + 57.0), hash(n + 58.0), f.x), f.y),
-		lerp(lerp(hash(n + 113.0), hash(n + 114.0), f.x),
-			 lerp(hash(n + 170.0), hash(n + 171.0), f.x), f.y);
+				lerp(hash(n + 57.0), hash(n + 58.0), f.x), f.y);
 }
 
 VS_OUTPUT main(in VS_INPUT IN)

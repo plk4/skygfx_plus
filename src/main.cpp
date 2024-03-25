@@ -337,12 +337,13 @@ myDefaultCallback(RpAtomic *atomic)
 		RwRenderStateGet(rwRENDERSTATEZWRITEENABLE, (void*)&zwrite);
 		if(zwrite && config->dualPassDefault)
 			dodual = 1;
-	}else if(pipe == skinPipe && config->dualPassPed)
+	}else if(pipe == skinPipe && config->dualPassPed && config->zwriteThresholdPed > 0)
 		dodual = 1;
 	if(dodual){
+		if (pipe == skinPipe) RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE); //this line was not on original skygfx, I don't know why, forced only on skin pipes (to be conservative) as it fixes parachute strings
 		RwRenderStateGet(rwRENDERSTATEALPHATESTFUNCTION, (void*)&alphatest);
 		RwRenderStateGet(rwRENDERSTATEALPHATESTFUNCTIONREF, (void*)&alpharef);
-		RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTIONREF, (void*)config->zwriteThreshold);
+		RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTIONREF, (void*)config->zwriteThresholdPed);
 		RwRenderStateSet(rwRENDERSTATEALPHATESTFUNCTION, (void*)rwALPHATESTFUNCTIONGREATEREQUAL);
 		RxPipelineExecute(pipe, atomic, 1);
 		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
@@ -1228,6 +1229,10 @@ readIni(int n)
 	if(c->zwriteThresholdGrass < 0) c->zwriteThresholdGrass = 0;
 	if(c->zwriteThresholdGrass > 255) c->zwriteThresholdGrass = 255;
 
+	c->zwriteThresholdPed = readint(cfg.get("SkyGfx", "zwriteThresholdPed", ""), 128);
+	if(c->zwriteThresholdPed < 0) c->zwriteThresholdPed = 0;
+	if(c->zwriteThresholdPed > 255) c->zwriteThresholdPed = 255;
+
 	c->coronaZtest = readint(cfg.get("SkyGfx", "coronaZtest", ""), -1);
 
 	c->bYCbCrFilter = readint(cfg.get("SkyGfx", "YCbCrCorrection", ""), 0);
@@ -1332,6 +1337,7 @@ afterStreamIni(void)
 	X(radiosityIntensity)			\
 	X(zwriteThreshold)			\
 	X(zwriteThresholdGrass)			\
+	X(zwriteThresholdPed)			\
 	X(coronaZtest)				\
 	X(bYCbCrFilter)				\
 	X(lumaScale)				\
@@ -1498,6 +1504,7 @@ installMenu(void)
 		menu.dualPassGrass = DebugMenuAddVarBool32("SkyGFX|Advanced", "Dual-pass Grass", &config->dualPassGrass, nil);
 		menu.zwriteThreshold = DebugMenuAddVar("SkyGFX|Advanced", "Dual-pass Alpha Threshold", &config->zwriteThreshold, nil, 1, 0, 255, nil);
 		menu.zwriteThresholdGrass = DebugMenuAddVar("SkyGFX|Advanced", "Dual-pass Alpha Grass Threshold", &config->zwriteThresholdGrass, nil, 1, 0, 255, nil);
+		menu.zwriteThresholdPed = DebugMenuAddVar("SkyGFX|Advanced", "Dual-pass Alpha Ped Threshold", &config->zwriteThresholdPed, nil, 1, 0, 255, nil);
 		menu.ps2ModulateBuilding = DebugMenuAddVarBool32("SkyGFX|Advanced", "PS2-modulate Buildings", &config->ps2ModulateBuilding, nil);
 		menu.ps2ModulateGrass = DebugMenuAddVarBool32("SkyGFX|Advanced", "PS2-modulate Grass", &config->ps2ModulateGrass, nil);
 		menu.infraredVision = DebugMenuAddVar("SkyGFX|Advanced", "Infrared vision", &config->infraredVision, nil, 1, 0, 1, ps2pcStr);

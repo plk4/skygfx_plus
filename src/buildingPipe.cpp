@@ -1,4 +1,5 @@
 #include "skygfx.h"
+#include "UniPipe.h"
 //#include <fstream>
 
 void *ps2BuildingVS, *ps2BuildingFxVS;
@@ -39,6 +40,9 @@ enum {
 	REG_envmat	= 38,
 
 };
+
+// Include unified building pipe implementation
+#include "UniBuildPipe.cpp"
 
 float &CCoronas__LightsMult = *(float*)0x8D4B5C;
 bool &CWeather__LightningFlash = *(bool*)0xC812CC;
@@ -930,6 +934,9 @@ hookBuildingPipe(void)
 	InjectHook(0x5D7100, CCustomBuildingDNPipeline__CreateCustomObjPipe_PS2);
 	InjectHook(0x5D7D90, CCustomBuildingPipeline__CreateCustomObjPipe_PS2);
 	Patch<uint8>(0x5D7200, 0xC3);	// disable interpolation
+
+	// Initialize unified building pipe configs
+	UniBuildPipe_InitConfigs();
 
 	if(explicitBuildingPipe >= 0)
 		InjectHook(0x5D7F40, CCustomBuildingRenderer__IsCBPCPipelineAttached, PATCH_JUMP);

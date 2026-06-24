@@ -6,7 +6,11 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <excpt.h>
+#include "UniPipe.h"
 //#include <fstream>
+
+// Include unified vegetation pipe implementation
+#include "UniVegPipe.cpp"
 
 static char g_logPath[MAX_PATH];
 static int g_logInit = 0;
@@ -694,9 +698,9 @@ CPlantMgr_Initialise(void)
 	RpAtomic *atomic;
 	for(int i = 0; i < 4; i++){
 		atomic = (*plantTab0)[i];
-		atomic->renderCallBack = grassRenderCallback;
+		atomic->renderCallBack = UniVegPipe_RenderCallback;
 		atomic = (*plantTab1)[i];
-		atomic->renderCallBack = grassRenderCallback;
+		atomic->renderCallBack = UniVegPipe_RenderCallback;
 	}
 	return ret;
 }
@@ -1026,6 +1030,9 @@ InitialiseGame_hook(void)
 		dbglog("InitialiseGame_hook: neoInit done");
 		initTexDB();
 		dbglog("InitialiseGame_hook: initTexDB done");
+		// Initialize unified PostFX system
+		UniPostFX_InitConfigs();
+		dbglog("InitialiseGame_hook: PostFX configs initialized");
 	}else{
 		dbglog("InitialiseGame_hook: re-entry detected (call #%d), skipping hooks", initCount);
 	}
@@ -2124,9 +2131,9 @@ DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
 		*(void**)0xA9AD78 = (void*)TagRenderCB;	/* This is the (unused) material pipeline of player tags */
 
 		// postfx
-		InjectHook(0x704D1E, CPostEffects::ColourFilter_switch);
-		InjectHook(0x704D5D, CPostEffects::Radiosity);
-		InjectHook(0x704FB3, CPostEffects::Radiosity);
+		InjectHook(0x704D1E, UniPostFX_ApplyColorFilter);
+		InjectHook(0x704D5D, UniPostFX_ApplyRadiosity);
+		InjectHook(0x704FB3, UniPostFX_ApplyRadiosity);
 		InjectHook(0x704D48, CPostEffects::DarknessFilter_fix);
 
 		// infrared vision
@@ -2140,7 +2147,7 @@ DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
 		// unused
 		InjectHook(0x705091, CPostEffects::Grain_PS2);
 
-		InjectHook(0x53EBE9, CPostEffects::DrawFinalEffects);
+		InjectHook(0x53EBE9, UniPostFX_ApplyFinalEffects);
 
 		// fix pointlight fog
 		InjectHook(0x700B6B, CSprite__RenderBufferedOneXLUSprite_Rotate_Aspect);

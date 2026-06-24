@@ -29,6 +29,7 @@ typedef int16_t int16;
 typedef int32_t int32;
 
 extern HMODULE dllModule;
+void dbglog(const char *fmt, ...);
 
 #define nil NULL
 #define VERSION 0x370
@@ -125,6 +126,116 @@ struct Config {
 	float envSpecularityMult;
 	float envPower;
 	float envFresnel;
+
+	// SSAO
+	RwBool ssaoEnable;
+	float ssaoRadius;
+	float ssaoPower;
+	float ssaoKernelSize;
+	int ssaoSampleCount;
+
+	// SMAA
+	RwBool smaaEnable;
+	int smaaPreset; // 0=LOW, 1=MEDIUM, 2=HIGH, 3=ULTRA
+	RwBool smaaPredication;
+	RwBool smaaTemporal;
+
+	// GTA IV Mode
+	RwBool ivMode;
+	float ivDesaturation;
+	float ivGamma;
+	float ivVignetteIntensity;
+	float ivVignetteRadius;
+	float ivVignetteContrast;
+	float ivBloomIntensity;
+	float ivExposure;
+
+	// Expanded Weather / Timecycle (GTA V style)
+	// Sky colors
+	float skyZenithR, skyZenithG, skyZenithB, skyZenithInten;
+	float skyZenithTransR, skyZenithTransG, skyZenithTransB, skyZenithTransInten;
+	float skyAzimuthEastR, skyAzimuthEastG, skyAzimuthEastB, skyAzimuthEastInten;
+	float skyAzimuthTransR, skyAzimuthTransG, skyAzimuthTransB, skyAzimuthTransInten;
+	float skyAzimuthWestR, skyAzimuthWestG, skyAzimuthWestB, skyAzimuthWestInten;
+	float skyPlaneR, skyPlaneG, skyPlaneB, skyPlaneInten;
+	
+	// Sun
+	float sunR, sunG, sunB;
+	float sunDiscR, sunDiscG, sunDiscB;
+	float sunDiscSize;
+	float sunMiePhase, sunMieScatter, sunMieIntenMult;
+	float sunInfluenceRadius, sunScatterInten;
+	
+	// Moon/Stars
+	float moonR, moonG, moonB;
+	float moonDiscSize;
+	float moonInten, starsInten;
+	float moonInfluenceRadius, moonScatterInten;
+	
+	// Clouds
+	float cloudGenFreq, cloudGenScale, cloudGenThresh, cloudGenSoftness;
+	float cloudDensityMult, cloudDensityBias;
+	float cloudMidR, cloudMidG, cloudMidB;
+	float cloudBaseR, cloudBaseG, cloudBaseB;
+	float cloudBaseStrength;
+	float cloudShadowR, cloudShadowG, cloudShadowB;
+	float cloudShadowStrength;
+	float cloudGenDensityOffset, cloudOffset;
+	float cloudOverallStrength, cloudOverallColor, cloudEdgeStrength;
+	float cloudFadeout, cloudHDR, cloudDitherStrength;
+	float smallCloudR, smallCloudG, smallCloudB;
+	float smallCloudDetailStrength, smallCloudDetailScale;
+	float smallCloudDensityMult, smallCloudDensityBias;
+	
+	// Light
+	float lightDirR, lightDirG, lightDirB, lightDirMult;
+	float lightDirAmbR, lightDirAmbG, lightDirAmbB, lightDirAmbInten, lightDirAmbIntenMult, lightDirAmbBounce;
+	float lightAmbDownWrap;
+	float lightNatAmbDownR, lightNatAmbDownG, lightNatAmbDownB, lightNatAmbDownInten;
+	float lightNatAmbBaseR, lightNatAmbBaseG, lightNatAmbBaseB, lightNatAmbBaseInten, lightNatAmbBaseIntenMult;
+	float lightArtifIntAmbDownR, lightArtifIntAmbDownG, lightArtifIntAmbDownB, lightArtifIntAmbDownInten;
+	float lightArtifIntAmbBaseR, lightArtifIntAmbBaseG, lightArtifIntAmbBaseB, lightArtifIntAmbBaseInten;
+	float lightArtifExtAmbDownR, lightArtifExtAmbDownG, lightArtifExtAmbDownB, lightArtifExtAmbDownInten;
+	float lightArtifExtAmbBaseR, lightArtifExtAmbBaseG, lightArtifExtAmbBaseB, lightArtifExtAmbBaseInten;
+	float pedLightR, pedLightG, pedLightB, pedLightMult;
+	float pedLightDirX, pedLightDirY, pedLightDirZ;
+	
+	// PostFX
+	float postfxExposure, postfxExposureMin, postfxExposureMax;
+	float postfxBrightPassThreshWidth, postfxBrightPassThresh;
+	float postfxIntensityBloom;
+	float postfxCorrectR, postfxCorrectG, postfxCorrectB, postfxCorrectCutoff;
+	float postfxShiftR, postfxShiftG, postfxShiftB, postfxShiftCutoff;
+	float postfxDesaturation;
+	float postfxNoise, postfxNoiseSize;
+	
+	// Vignette
+	float vignetteIntensity, vignetteRadius, vignetteContrast;
+	float vignetteR, vignetteG, vignetteB;
+	
+	// Color grading
+	float gradTopR, gradTopG, gradTopB;
+	float gradMidR, gradMidG, gradMidB;
+	float gradBotR, gradBotG, gradBotB;
+	float gradMidpoint, gradTopMidMidpoint, gradMidBotMidpoint;
+	
+	// Lens
+	float lensDistortionCoeff, lensDistortionCubeCoeff;
+	float lensChromaticAberrationCoeff, lensChromaticAberrationCubeCoeff;
+	float lensArtefactsInten, lensArtefactsIntenMinExp, lensArtefactsIntenMaxExp;
+	
+	// Water
+	float waterReflectionFarClip;
+	
+	// Weather cycle control
+	int currentWeatherType;
+	float weatherTransition;
+	RwBool weatherCycleEnabled;
+	int timecycleOverrideHour;
+	RwBool timecycleOverrideEnabled;
+
+	// Debug menu
+	RwBool debugMenuOpen;
 };
 extern int numConfigs;
 extern int currentConfig;
@@ -157,6 +268,7 @@ enum {
 	COLORFILTER_III    = 4,
 	COLORFILTER_VC     = 5,
 	COLORFILTER_VCS    = 6,
+	COLORFILTER_GTAIV  = 7,
 };
 
 struct CPostEffects
@@ -200,6 +312,8 @@ struct CPostEffects
 	static void DrawQuadSetDefaultUVs(void);
 	static void SpeedFX(float);
 	static void DrawFinalEffects(void);
+	static void DrawSSAO(void);
+	static void DrawSMAA(void);
 
 	static Imf &ms_imf;
 
@@ -324,6 +438,13 @@ extern void *mobileVehiclePipeVS, *mobileVehiclePipePS;
 extern void *iiiTrailsPS, *vcTrailsPS;
 extern void *gradingPS, *contrastPS;
 extern void *blurPS, *radiosityPS;
+extern void *SMAA;
+extern void *SSAO;
+extern void *GTAIV_PS;
+// GTA IV forward passes
+extern void *gtaivVehicleVS, *gtaivVehiclePS;
+extern void *gtaivBuildingVS, *gtaivBuildingPS;
+extern void *gtaivFPVS, *gtaivFPPS;
 // building
 extern void *ps2BuildingVS, *ps2BuildingFxVS;
 extern void *xboxBuildingVS, *xboxBuildingPS, *xboxBuildingStochasticPS;

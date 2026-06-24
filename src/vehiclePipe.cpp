@@ -448,8 +448,16 @@ CCustomCarEnvMapPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *obj
 		surfProps[3] = flags & rpGEOMETRYPRELIT ? 1.0f : 0.0f;
 		RwD3D9SetVertexShaderConstant(REG_surfProps, surfProps, 1);
 
-		RwD3D9SetVertexShader(vehiclePipeVS);
-		RwD3D9SetPixelShader(simplePS);
+		if(config->ivMode){
+			RwD3D9SetVertexShader(gtaivVehicleVS);
+			RwD3D9SetPixelShader(gtaivVehiclePS);
+			float psParams[4] = { 1.0f, 0.0f, 0.0f, 0.0f };
+			RwD3D9SetPixelShaderConstant(0, &fxParams, 1);
+			RwD3D9SetPixelShaderConstant(1, psParams, 1);
+		}else{
+			RwD3D9SetVertexShader(vehiclePipeVS);
+			RwD3D9SetPixelShader(simplePS);
+		}
 
 		D3D9RenderDual(config->dualPassVehicle, resEntryHeader, instancedData);
 

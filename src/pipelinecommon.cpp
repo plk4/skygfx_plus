@@ -3,6 +3,13 @@
 #include "d3d9helper.h"
 #include <DirectXMath.h>
 
+void *SMAA = nullptr;
+void *SSAO = nullptr;
+void *GTAIV_PS = nullptr;
+void *gtaivVehicleVS = nullptr, *gtaivVehiclePS = nullptr;
+void *gtaivBuildingVS = nullptr, *gtaivBuildingPS = nullptr;
+void *gtaivFPVS = nullptr, *gtaivFPPS = nullptr;
+
 typedef D3DMATRIX D3DXMATRIX;
 
 D3DMATRIX &_RwD3D9D3D9ViewTransform = *(D3DMATRIX*)0xC9BC80;
@@ -297,9 +304,19 @@ makePS(int res, void **sh)
 {
 	if(*sh == NULL){
 		HRSRC resource = FindResource(dllModule, MAKEINTRESOURCE(res), RT_RCDATA);
+		if(resource == NULL){
+			dbglog("  makePS(%d): FindResource FAILED", res);
+			return;
+		}
 		RwUInt32 *shader = (RwUInt32*)LoadResource(dllModule, resource);
+		if(shader == NULL){
+			dbglog("  makePS(%d): LoadResource FAILED", res);
+			return;
+		}
+		dbglog("  makePS(%d): creating pixel shader...", res);
 		RwD3D9CreatePixelShader(shader, sh);
 		FreeResource(shader);
+		dbglog("  makePS(%d): OK sh=%p", res, *sh);
 	}
 }
 
@@ -343,9 +360,13 @@ makeVSfromFile(char* fileName, void** sh)
 	}
 }
 
+extern void dbglog(const char *fmt, ...);
+
 void
 CreateShaders(void)
 {
+	dbglog("CreateShaders started");
+
 	// postfx
 	makePS(IDR_IIITRAILSPS, &iiiTrailsPS);
 	makePS(IDR_VCTRAILSPS, &vcTrailsPS);
@@ -356,6 +377,30 @@ CreateShaders(void)
 
 	makePS(IDR_SIMPLEPS, &simplePS);
 	makePS(IDR_SIMPLESTOCHASTICPS, &simpleStochasticPS);
+
+	// SSAO & SMAA
+	dbglog("  loading SSAO shader...");
+	makePS(IDR_SSAOPS, &SSAO);
+	dbglog("  SSAO=%p", SSAO);
+	dbglog("  loading SMAA shader...");
+	makePS(IDR_SMAAPS, &SMAA);
+	dbglog("  SMAA=%p", SMAA);
+
+	// GTA IV Mode
+	dbglog("  loading GTAIV shader...");
+	makePS(IDR_GTAIVPS, &GTAIV_PS);
+	dbglog("  GTAIV=%p", GTAIV_PS);
+	dbglog("  loading GTAIV forward pass shaders...");
+	makeVS(IDR_GTAIVVEHICLEVS, &gtaivVehicleVS);
+	makePS(IDR_GTAIVVEHICLEPS, &gtaivVehiclePS);
+	makeVS(IDR_GTAIVBUILDINGVS, &gtaivBuildingVS);
+	makePS(IDR_GTAIVBUILDINGPS, &gtaivBuildingPS);
+	dbglog("  GTAIV vehicle VS=%p PS=%p", gtaivVehicleVS, gtaivVehiclePS);
+	dbglog("  GTAIV building VS=%p PS=%p", gtaivBuildingVS, gtaivBuildingPS);
+	dbglog("  loading GTAIV Forward+ shaders...");
+	makeVS(IDR_GTAIVFPVS, &gtaivFPVS);
+	makePS(IDR_GTAIVFPPS, &gtaivFPPS);
+	dbglog("  GTAIV FP VS=%p PS=%p", gtaivFPVS, gtaivFPPS);
 
 	// vehicles
 	makeVS(IDR_VEHICLEVS, &vehiclePipeVS);

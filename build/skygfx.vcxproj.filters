@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="external">
@@ -24,6 +24,9 @@
     <ClInclude Include="..\resources\resource.h">
       <Filter>resources</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\HLSL_hook.h">
+      <Filter>src</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\LinkList.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -36,6 +39,9 @@
     <ClInclude Include="..\src\Pools.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\SMAA.h">
+      <Filter>src</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\debugmenu_public.h">
       <Filter>src</Filter>
     </ClInclude>
@@ -45,11 +51,20 @@
     <ClInclude Include="..\src\neo.h">
       <Filter>src</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\postfx.h">
+      <Filter>src</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\skygfx.h">
       <Filter>src</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\src\HLSL_hook.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\SMAA.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\buildingPipe.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -57,6 +72,9 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\src\envmap.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extendedplg.cpp">
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\src\gta.cpp">
@@ -92,11 +110,11 @@
     <ClCompile Include="..\src\vehiclePipe.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\extendedplg.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\resources\Resource.aps">
+      <Filter>resources</Filter>
+    </None>
     <None Include="..\shaders\shaders.bat">
       <Filter>shaders</Filter>
     </None>

@@ -263,32 +263,56 @@ CCustomBuildingDNPipeline__CustomPipeRenderCB_PS2(RwResEntry *repEntry, void *ob
 		RwD3D9SetVertexShaderConstant(REG_ambient, &buildingAmbient, 1);
 		RwD3D9SetVertexShaderConstant(REG_surfProps, &material->surfaceProps, 1);
 
-		if (definedVertexShader == DefinedVertexShader::WIND && instancedData->vertexAlpha) {
+		TexInfo *texinfo = RwTextureGetTexDBInfo(material->texture);
+
+		if(config->ivMode){
+			RwD3D9SetVertexShader(gtaivBuildingVS);
+			RwD3D9SetPixelShader(gtaivBuildingPS);
+		}else if (definedVertexShader == DefinedVertexShader::WIND && instancedData->vertexAlpha) {
 			setWindParams(atomic, frame);
 			RwD3D9SetVertexShader(ps2BuildingWindVS);
+
+			if(config->detailMaps && texinfo->detail){
+				float tile = texinfo->detailtile/10.0f;
+				RwD3D9SetPixelShaderConstant(1, &tile, 1);
+				pipeSetTexture(texinfo->detail, 2);
+				if (texinfo->stochastic && config->stochastic) {
+					RwD3D9SetPixelShader(simpleDetailStochasticPS);
+				}
+				else {
+					RwD3D9SetPixelShader(simpleDetailPS);
+				}
+			}
+			else {
+				if (texinfo->stochastic && config->stochastic) {
+					RwD3D9SetPixelShader(simpleStochasticPS);
+				}
+				else {
+					RwD3D9SetPixelShader(simplePS);
+				}
+			}
 		}
 		else {
 			RwD3D9SetVertexShader(ps2BuildingVS);
-		}
 
-		TexInfo *texinfo = RwTextureGetTexDBInfo(material->texture);
-		if(config->detailMaps && texinfo->detail){
-			float tile = texinfo->detailtile/10.0f;
-			RwD3D9SetPixelShaderConstant(1, &tile, 1);
-			pipeSetTexture(texinfo->detail, 2);
-			if (texinfo->stochastic && config->stochastic) {
-				RwD3D9SetPixelShader(simpleDetailStochasticPS);
+			if(config->detailMaps && texinfo->detail){
+				float tile = texinfo->detailtile/10.0f;
+				RwD3D9SetPixelShaderConstant(1, &tile, 1);
+				pipeSetTexture(texinfo->detail, 2);
+				if (texinfo->stochastic && config->stochastic) {
+					RwD3D9SetPixelShader(simpleDetailStochasticPS);
+				}
+				else {
+					RwD3D9SetPixelShader(simpleDetailPS);
+				}
 			}
 			else {
-				RwD3D9SetPixelShader(simpleDetailPS);
-			}
-		}
-		else {
-			if (texinfo->stochastic && config->stochastic) {
-				RwD3D9SetPixelShader(simpleStochasticPS);
-			}
-			else {
-				RwD3D9SetPixelShader(simplePS);
+				if (texinfo->stochastic && config->stochastic) {
+					RwD3D9SetPixelShader(simpleStochasticPS);
+				}
+				else {
+					RwD3D9SetPixelShader(simplePS);
+				}
 			}
 		}
 

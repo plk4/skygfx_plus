@@ -1,5 +1,7 @@
 #include "skygfx.h"
 #include "ModuleList.hpp"
+#include "HLSL_hook.h"
+#include "postfx.h"
 
 RwIm2DVertex *colorfilterVerts = (RwIm2DVertex*)0xC400D8;
 RwImVertexIndex *colorfilterIndices = (RwImVertexIndex*)0x8D5174;
@@ -74,6 +76,10 @@ float CPostEffects::m_cbScale = 1.23f;
 float CPostEffects::m_cbOffset = 0.0f;
 float CPostEffects::m_crScale = 1.23f;
 float CPostEffects::m_crOffset = 0.0f;
+
+// SSAO/SMAA
+static RwRaster *ssaoRaster = nil;
+static RwRaster *smaaRaster = nil;
 
 
 
@@ -228,6 +234,7 @@ makequad(RwD3D9Vertex *v, int width, int height, int texwidth = 0, int texheight
 void
 CPostEffects::Radiosity_VCS_init(void)
 {
+	dbglog("Radiosity_VCS_init: start");
 	static float uOffsets[] = { -1.0f, 1.0f, 0.0f, 0.0f,   -1.0f, 1.0f, -1.0f, 1.0f };
 	static float vOffsets[] = { 0.0f, 0.0f, -1.0f, 1.0f,   -1.0f, -1.0f, 1.0f, 1.0f };
 	int i;
@@ -285,6 +292,7 @@ CPostEffects::Radiosity_VCS_init(void)
 void
 CPostEffects::Radiosity_VCS(int limit, int intensity)
 {
+	dbglog("Radiosity_VCS: start (limit=%d intensity=%d)", limit, intensity);
 	static int lastWidth, lastHeight, lastConfigRes;
 	int i;
 	int resMult = config->trailsResolution;
@@ -388,6 +396,10 @@ RwRGBA rgbTweak;
 void
 CPostEffects::Blur_VCS(void)
 {
+	if(!CPostEffects::pRasterFrontBuffer){
+		dbglog("Blur_VCS: pRasterFrontBuffer is NULL, skipping");
+		return;
+	}
 	static int lastWidth, lastHeight;
 	static int justInitialized;
 	int i;
@@ -543,6 +555,10 @@ void *blurPS, *radiosityPS;
 void
 CPostEffects::Radiosity_shader(int intensityLimit, int filterPasses, int renderPasses, int intensity)
 {
+	if(!pRasterFrontBuffer){
+		dbglog("Radiosity_shader: pRasterFrontBuffer is NULL, skipping");
+		return;
+	}
 	static RwRaster *workBuffer;
 	if(workBuffer)
 		if(workBuffer->width != pRasterFrontBuffer->width ||
@@ -642,6 +658,11 @@ CPostEffects::Radiosity_shader(int intensityLimit, int filterPasses, int renderP
 void
 CPostEffects::Radiosity(int intensityLimit, int filterPasses, int renderPasses, int intensity)
 {
+	dbglog("Radiosity: start (do=%d rad=%d vcs=%d)", config->doRadiosity, config->radiosity, config->vcsTrails);
+	if(!pRasterFrontBuffer){
+		dbglog("Radiosity: pRasterFrontBuffer is NULL, skipping");
+		return;
+	}
 /*
 	{
 		static bool keystate = false;
@@ -776,19 +797,20 @@ CPostEffects::Radiosity(int intensityLimit, int filterPasses, int renderPasses, 
 	// Third step: add to framebuffer
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)!m_bRadiosityDebug);
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
-	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDONE);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 	umin = (0 + 0.5f)/width;
 	umax = (downsampledwidth + 0.5f)/width;
 	vmin = (0 + 0.5f)/height;
 	vmax = (downsampledheight + 0.5f)/height;
 	quadSetUV(verts, umin, vmin, umax, vmax);
 	quadSetXY(verts, 0.0f, 0.0f, w, h);
-	RwIm2DVertexSetIntRGBA(&verts[0], 255, 255, 255, intensity);
-	RwIm2DVertexSetIntRGBA(&verts[1], 255, 255, 255, intensity);
-	RwIm2DVertexSetIntRGBA(&verts[2], 255, 255, 255, intensity);
-	RwIm2DVertexSetIntRGBA(&verts[3], 255, 255, 255, intensity);
-	for(int i = 0; i < renderPasses; i++)
-		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, verts, 4, colorfilterIndices, 6);
+	// Use lower intensity and proper alpha blending
+	RwIm2DVertexSetIntRGBA(&verts[0], 255, 255, 255, intensity/4);
+	RwIm2DVertexSetIntRGBA(&verts[1], 255, 255, 255, intensity/4);
+	RwIm2DVertexSetIntRGBA(&verts[2], 255, 255, 255, intensity/4);
+	RwIm2DVertexSetIntRGBA(&verts[3], 255, 255, 255, intensity/4);
+	// Single pass instead of multiple additive passes
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, verts, 4, colorfilterIndices, 6);
 
 
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
@@ -1200,6 +1222,11 @@ CPostEffects::Grain_PS2(int strength, bool generate)
 void
 CPostEffects::ColourFilter_switch(RwRGBA rgb1, RwRGBA rgb2)
 {
+	dbglog("ColourFilter_switch: start (ssao=%d smaa=%d)", config->ssaoEnable, config->smaaEnable);
+
+	// SSAO must run before color filter to read original scene
+	DrawSSAO();
+
 	{
 		static bool keystate = false;
 		if(GetAsyncKeyState(config->keys[0]) & 0x8000){
@@ -1290,10 +1317,29 @@ CPostEffects::ColourFilter_switch(RwRGBA rgb1, RwRGBA rgb2)
 		// this effects ignores alphas
 		CPostEffects::ColourFilter_Generic(rgb1, rgb2, vcTrailsPS);
 		break;
+	case COLORFILTER_GTAIV:
+		// GTA IV filmic tonemapping postfx
+		{
+			dbglog("ColourFilter_switch: GTAIV mode (desat=%.2f gamma=%.2f vignette=%.2f bloom=%.2f exposure=%.2f)",
+				config->ivDesaturation, config->ivGamma, config->ivVignetteIntensity, config->ivBloomIntensity, config->ivExposure);
+			// Set IV-specific shader constants
+			float ivParams[4] = { config->ivDesaturation, config->ivGamma, config->ivVignetteIntensity, config->ivVignetteRadius };
+			RwD3D9SetPixelShaderConstant(0, ivParams, 1);
+			float ivParams2[4] = { config->ivVignetteContrast, config->ivBloomIntensity, config->ivExposure, 0.0f };
+			RwD3D9SetPixelShaderConstant(1, ivParams2, 1);
+			// Apply color correction tint from timecycle
+			float tint[4] = { rgb1.red/255.0f, rgb1.green/255.0f, rgb1.blue/255.0f, rgb1.alpha/255.0f };
+			RwD3D9SetPixelShaderConstant(2, tint, 1);
+			float tint2[4] = { rgb2.red/255.0f, rgb2.green/255.0f, rgb2.blue/255.0f, rgb2.alpha/255.0f };
+			RwD3D9SetPixelShaderConstant(3, tint2, 1);
+			CPostEffects::ColourFilter_Generic(rgb1, rgb2, GTAIV_PS);
+		}
+		break;
 	default:
 		return;
 	}
 	UpdateFrontBuffer();
+	dbglog("ColourFilter_switch: done (filter=%d)", colorFilter);
 
 	//static int doramp = 0;
 	//{
@@ -1327,65 +1373,305 @@ static RwMatrix YUV2RGB = {
 void
 CPostEffects::DrawFinalEffects(void)
 {
-	if(!m_bYCbCrFilter)
+	dbglog("DrawFinalEffects: start ycbcr=%d", m_bYCbCrFilter);
+	if(m_bYCbCrFilter){
+		UpdateFrontBuffer();
+
+		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
+		RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void*)CPostEffects::pRasterFrontBuffer);
+		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+
+		RwMatrix m = RGB2YUV;
+
+		RwMatrix m2;
+		m2.right.x = m_lumaScale;
+		m2.up.x = 0.0f;
+		m2.at.x = 0.0f;
+		m2.pos.x = m_lumaOffset;
+		m2.right.y = 0.0f;
+		m2.up.y = m_cbScale;
+		m2.at.y = 0.0f;
+		m2.pos.y = m_cbOffset;
+		m2.right.z = 0.0f;
+		m2.up.z = 0.0f;
+		m2.at.z = m_crScale;
+		m2.pos.z = m_crOffset;
+
+		RwMatrixOptimize(&m2, nil);
+
+		RwMatrixTransform(&m, &m2, rwCOMBINEPOSTCONCAT);
+		RwMatrixTransform(&m, &YUV2RGB, rwCOMBINEPOSTCONCAT);
+		Grade red, green, blue;
+		red.r = m.right.x;
+		red.g = m.up.x;
+		red.b = m.at.x;
+		red.a = m.pos.x;
+		green.r = m.right.y;
+		green.g = m.up.y;
+		green.b = m.at.y;
+		green.a = m.pos.y;
+		blue.r = m.right.z;
+		blue.g = m.up.z;
+		blue.b = m.at.z;
+		blue.a = m.pos.z;
+
+		RwD3D9SetPixelShaderConstant(0, &red, 1);
+		RwD3D9SetPixelShaderConstant(1, &green, 1);
+		RwD3D9SetPixelShaderConstant(2, &blue, 1);
+
+		overrideIm2dPixelShader = gradingPS;
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, colorfilterVerts, 4, colorfilterIndices, 6);
+		overrideIm2dPixelShader = nil;
+
+		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+		RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void*)NULL);
+		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+
+		UpdateFrontBuffer();
+	}
+
+	DrawSMAA();
+	dbglog("DrawFinalEffects: done");
+}
+
+static IDirect3DTexture9 *g_ssaoDepthTex = NULL;
+static IDirect3DSurface9 *g_ssaoDepthSurf = NULL;
+static IDirect3DTexture9 *g_ssaoNoiseTex = NULL;
+static RwRaster *g_ssaoOutputRaster = NULL;
+static BOOL g_ssaoDepthFallback = FALSE;
+static BOOL g_ssaoDepthPacked = FALSE;
+
+static void InitSSAOResources(void)
+{
+	if(g_ssaoNoiseTex)
 		return;
 
-	UpdateFrontBuffer();
+	__try {
+		dbglog("InitSSAOResources: start");
+		IDirect3DDevice9 *dev = d3d9device;
+		if(dev == NULL){ dbglog("InitSSAOResources: no dev"); return; }
+		if(Scene.camera == NULL){ dbglog("InitSSAOResources: no camera"); return; }
+		RwRaster *camRas = RwCameraGetRaster(Scene.camera);
+		if(camRas == NULL){ dbglog("InitSSAOResources: no camRas"); return; }
+		int w = camRas->width;
+		int h = camRas->height;
+		dbglog("InitSSAOResources: camRas %dx%d", w, h);
 
-	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
-	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
-	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
-	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
-	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void*)CPostEffects::pRasterFrontBuffer);
-	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+		if(FAILED(dev->CreateTexture(4, 4, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &g_ssaoNoiseTex, NULL))){
+			dbglog("InitSSAOResources: CreateTexture noise failed");
+			return;
+		}
+		dbglog("InitSSAOResources: noise texture created");
+		D3DLOCKED_RECT lr;
+		if(FAILED(g_ssaoNoiseTex->LockRect(0, &lr, NULL, 0))){
+			dbglog("InitSSAOResources: LockRect noise failed");
+			return;
+		}
+		for(int y = 0; y < 4; y++){
+			for(int x = 0; x < 4; x++){
+				float rx = (rand()/(float)RAND_MAX)*2.0f - 1.0f;
+				float ry = (rand()/(float)RAND_MAX)*2.0f - 1.0f;
+				float len = sqrtf(rx*rx + ry*ry);
+				if(len > 1.0f){ rx /= len; ry /= len; }
+				((DWORD*)((BYTE*)lr.pBits + y*lr.Pitch))[x] =
+					D3DCOLOR_ARGB(0, (int)((rx+1)*127.5f), (int)((ry+1)*127.5f), 0);
+			}
+		}
+		g_ssaoNoiseTex->UnlockRect(0);
+		dbglog("InitSSAOResources: noise texture filled");
 
-	RwMatrix m = RGB2YUV;
+		IDirect3D9 *d3d = NULL;
+		if(SUCCEEDED(dev->GetDirect3D(&d3d)) && d3d){
+			dbglog("InitSSAOResources: checking INTZ support");
+			HRESULT hr = d3d->CheckDeviceFormat(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
+				D3DFMT_X8R8G8B8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE,
+				(D3DFORMAT)MAKEFOURCC('I','N','T','Z'));
+			if(SUCCEEDED(hr)){
+				dbglog("InitSSAOResources: INTZ supported, creating depth texture");
+				hr = dev->CreateTexture(w, h, 1, D3DUSAGE_DEPTHSTENCIL,
+					(D3DFORMAT)MAKEFOURCC('I','N','T','Z'),
+					D3DPOOL_DEFAULT, &g_ssaoDepthTex, NULL);
+				if(SUCCEEDED(hr)){
+					g_ssaoDepthTex->GetSurfaceLevel(0, &g_ssaoDepthSurf);
+					dbglog("InitSSAOResources: INTZ depth texture created OK");
+					d3d->Release();
+					dbglog("InitSSAOResources: done");
+					return;
+				}else{
+					dbglog("InitSSAOResources: CreateTexture INTZ failed hr=0x%08X", hr);
+				}
+			}else{
+				dbglog("InitSSAOResources: INTZ format not supported on this hardware/driver");
+			}
+			d3d->Release();
+		}
+		dbglog("InitSSAOResources: SSAO disabled - INTZ depth format not available");
+	} __except(EXCEPTION_EXECUTE_HANDLER){
+		dbglog("InitSSAOResources crashed! exception=0x%08X", GetExceptionCode());
+	}
+}
 
-	RwMatrix m2;
-	m2.right.x = m_lumaScale;
-	m2.up.x = 0.0f;
-	m2.at.x = 0.0f;
-	m2.pos.x = m_lumaOffset;
-	m2.right.y = 0.0f;
-	m2.up.y = m_cbScale;
-	m2.at.y = 0.0f;
-	m2.pos.y = m_cbOffset;
-	m2.right.z = 0.0f;
-	m2.up.z = 0.0f;
-	m2.at.z = m_crScale;
-	m2.pos.z = m_crOffset;
+void
+CPostEffects::DrawSSAO(void)
+{
+	if(!config->ssaoEnable || !SSAO)
+		return;
 
-	RwMatrixOptimize(&m2, nil);
+	__try {
+		dbglog("DrawSSAO: start");
+		IDirect3DDevice9 *dev = d3d9device;
+		if(dev == NULL){ dbglog("DrawSSAO: no dev"); return; }
+		if(Scene.camera == NULL){ dbglog("DrawSSAO: no camera"); return; }
+		RwRaster *camRas = RwCameraGetRaster(Scene.camera);
+		if(camRas == NULL){ dbglog("DrawSSAO: no camRas"); return; }
+		int w = camRas->width;
+		int h = camRas->height;
+		dbglog("DrawSSAO: camRas %dx%d", w, h);
 
-	RwMatrixTransform(&m, &m2, rwCOMBINEPOSTCONCAT);
-	RwMatrixTransform(&m, &YUV2RGB, rwCOMBINEPOSTCONCAT);
-	Grade red, green, blue;
-	red.r = m.right.x;
-	red.g = m.up.x;
-	red.b = m.at.x;
-	red.a = m.pos.x;
-	green.r = m.right.y;
-	green.g = m.up.y;
-	green.b = m.at.y;
-	green.a = m.pos.y;
-	blue.r = m.right.z;
-	blue.g = m.up.z;
-	blue.b = m.at.z;
-	blue.a = m.pos.z;
+		InitSSAOResources();
 
-	RwD3D9SetPixelShaderConstant(0, &red, 1);
-	RwD3D9SetPixelShaderConstant(1, &green, 1);
-	RwD3D9SetPixelShaderConstant(2, &blue, 1);
+		if(!g_ssaoNoiseTex || !g_ssaoDepthTex){
+			dbglog("DrawSSAO: no noise/depth tex (INTZ not supported), disabling SSAO");
+			config->ssaoEnable = 0;
+			return;
+		}
 
-	overrideIm2dPixelShader = gradingPS;
-	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, colorfilterVerts, 4, colorfilterIndices, 6);
-	overrideIm2dPixelShader = nil;
+		if(!g_ssaoOutputRaster || g_ssaoOutputRaster->width != w || g_ssaoOutputRaster->height != h){
+			if(g_ssaoOutputRaster) RwRasterDestroy(g_ssaoOutputRaster);
+			g_ssaoOutputRaster = RwRasterCreate(w, h, camRas->depth, rwRASTERTYPECAMERATEXTURE);
+			if(!g_ssaoOutputRaster){ dbglog("DrawSSAO: RwRasterCreate failed"); return; }
+		}
 
-	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
-	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
-	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
-	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void*)NULL);
-	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+		IDirect3DSurface9 *pDS = NULL;
+		if(FAILED(dev->GetDepthStencilSurface(&pDS)) || pDS == NULL){
+			dbglog("DrawSSAO: GetDepthStencilSurface failed");
+			return;
+		}
+		if(FAILED(dev->StretchRect(pDS, NULL, g_ssaoDepthSurf, NULL, D3DTEXF_NONE))){
+			dbglog("DrawSSAO: StretchRect failed, disabling SSAO");
+			pDS->Release();
+			config->ssaoEnable = 0;
+			return;
+		}
+		pDS->Release();
+
+		ImmediateModeRenderStatesStore();
+		ImmediateModeRenderStatesSet();
+
+		// Render SSAO occlusion to output raster
+		RwRaster *origRaster = camRas;
+		RwCameraEndUpdate(Scene.camera);
+		RwCameraSetRaster(Scene.camera, g_ssaoOutputRaster);
+		RwCameraBeginUpdate(Scene.camera);
+
+		RwD3D9SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+		RwD3D9SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+		RwD3D9SetRenderState(D3DRS_ZENABLE, FALSE);
+		RwD3D9SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+
+		dev->SetTexture(0, g_ssaoDepthTex);
+		dev->SetTexture(1, g_ssaoNoiseTex);
+		dev->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+		dev->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+		dev->SetSamplerState(1, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+		dev->SetSamplerState(1, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+
+		float radius = config->ssaoRadius > 0.0f ? config->ssaoRadius : 1.0f;
+		float power = config->ssaoPower > 0.0f ? config->ssaoPower : 2.0f;
+		float noiseScale = 4.0f / w;
+		float params[4] = { radius, power, noiseScale, 0.0f };
+		RwD3D9SetPixelShaderConstant(0, params, 1);
+
+		float screenSize[4] = { (float)w, (float)h, 1.0f/w, 1.0f/h };
+		RwD3D9SetPixelShaderConstant(1, screenSize, 1);
+
+		RwCamera *cam = Scene.camera;
+		float n = cam->nearPlane;
+		float f = cam->farPlane;
+		float projInfo[4] = {
+			cam->recipViewWindow.x,
+			cam->recipViewWindow.y,
+			-n * f / (f - n),
+			f / (f - n)
+		};
+		RwD3D9SetPixelShaderConstant(2, projInfo, 1);
+
+		overrideIm2dPixelShader = SSAO;
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, colorfilterVerts, 4, colorfilterIndices, 6);
+		overrideIm2dPixelShader = nil;
+
+		// Restore original camera raster
+		RwCameraEndUpdate(Scene.camera);
+		RwCameraSetRaster(Scene.camera, origRaster);
+		RwCameraBeginUpdate(Scene.camera);
+
+		// Blend SSAO occlusion with scene (multiply)
+		RwD3D9SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+		RwD3D9SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ZERO);
+		RwD3D9SetRenderState(D3DRS_DESTBLEND, D3DBLEND_SRCCOLOR);
+		RwD3D9SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, g_ssaoOutputRaster);
+
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, colorfilterVerts, 4, colorfilterIndices, 6);
+
+		RwD3D9SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+
+		ImmediateModeRenderStatesReStore();
+		dbglog("DrawSSAO: done");
+	} __except(EXCEPTION_EXECUTE_HANDLER){
+		dbglog("DrawSSAO crashed! exception=0x%08X", GetExceptionCode());
+	}
+}
+
+void
+CPostEffects::DrawSMAA(void)
+{
+	if(!config->smaaEnable || !SMAA)
+		return;
+	if(pRasterFrontBuffer == NULL)
+		return;
+
+	__try {
+		dbglog("DrawSMAA: start");
+		ImmediateModeRenderStatesStore();
+		ImmediateModeRenderStatesSet();
+
+		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+		RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void*)pRasterFrontBuffer);
+		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+
+		float params[4] = { config->smaaEnable ? 0.08f : 1.0f, 0.0f, 0.0f, 0.0f };
+		RwD3D9SetPixelShaderConstant(0, params, 1);
+
+		float w = (float)RwRasterGetWidth(pRasterFrontBuffer);
+		float h = (float)RwRasterGetHeight(pRasterFrontBuffer);
+		if(w < 1.0f || h < 1.0f){
+			dbglog("DrawSMAA: invalid front buffer size");
+			ImmediateModeRenderStatesReStore();
+			return;
+		}
+		float screenSize[4] = { w, h, 1.0f/w, 1.0f/h };
+		RwD3D9SetPixelShaderConstant(1, screenSize, 1);
+
+		overrideIm2dPixelShader = SMAA;
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, colorfilterVerts, 4, colorfilterIndices, 6);
+		overrideIm2dPixelShader = nil;
+
+		ImmediateModeRenderStatesReStore();
+		dbglog("DrawSMAA: done");
+	} __except(EXCEPTION_EXECUTE_HANDLER){
+		dbglog("DrawSMAA crashed! exception=0x%08X", GetExceptionCode());
+	}
 }
 
 void (*CPostEffects::Initialise_orig)(void);
@@ -1399,13 +1685,18 @@ CPostEffects::Initialise(void)
 bool
 CPostEffects::Initialise_skygfx(void*)
 {
+	dbglog("Initialise_skygfx entered");
+
 	InjectHook(0x7FB824, Im2dSetPixelShader_hook);
 	InjectHook(0x7FB885, Im2DColorModulationHook);
 	InjectHook(0x7FB8A6, Im2DAlphaModulationHook);
+	dbglog("  im2d hooks done");
 
 	CreateShaders();
+	dbglog("  shaders created");
 
 	grainRaster = RwRasterCreate(64, 64, 32, rwRASTERTYPETEXTURE | rwRASTERFORMAT8888);
+	dbglog("  grain raster=%p", grainRaster);
 	return true;
 }
 

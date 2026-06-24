@@ -3,7 +3,89 @@
 #include "ini_parser.hpp"
 #include "debugmenu_public.h"
 #include "ModuleList.hpp"
+#include <stdarg.h>
+#include <stdio.h>
+#include <excpt.h>
 //#include <fstream>
+
+static char g_logPath[MAX_PATH];
+static int g_logInit = 0;
+static volatile int g_allowCrashPassThrough = 0;
+
+static LONG WINAPI
+crashHandler(EXCEPTION_POINTERS *ep)
+{
+	DWORD code = ep->ExceptionRecord->ExceptionCode;
+
+	// Let C++ exceptions (0xE06D7363) pass through to try/catch blocks in readint/readfloat
+	// Swallowing them with EXCEPTION_EXECUTE_HANDLER corrupts C++ exception handling
+	if(code == 0xE06D7363)
+		return EXCEPTION_CONTINUE_SEARCH;
+
+	static int crashCount = 0;
+	if(++crashCount > 20) return EXCEPTION_CONTINUE_SEARCH;
+	
+	CONTEXT *ctx = ep->ContextRecord;
+	dbglog("CRASH: code=0x%08X at=0x%p EAX=%08X EBX=%08X ECX=%08X EDX=%08X ESI=%08X EDI=%08X EBP=%08X ESP=%08X",
+		code, ep->ExceptionRecord->ExceptionAddress,
+		ctx->Eax, ctx->Ebx, ctx->Ecx, ctx->Edx, ctx->Esi, ctx->Edi, ctx->Ebp, ctx->Esp);
+
+	// Auto-fixes must fire BEFORE pass-through check so they work during InitialiseGame
+	// Auto-fix: cascade crash in LoadCollisionFileFirstTime after corrupt COL model
+	// Instruction at 0x5B5192: mov byte ptr [esi+0x28], dl (3 bytes, ESI=NULL from failed new CColModel)
+	if(code == 0xC0000005 && ctx->Eip == 0x5B5192 && ctx->Esi == 0){
+		dbglog("AUTO-FIX: skipping NULL CColModel store at 0x5B5192");
+		ctx->Eip += 3;
+		return EXCEPTION_CONTINUE_EXECUTION;
+	}
+
+	// Auto-fix: crash in model info lookup during CGame::Initialise
+	// Instruction at 0x405CBC: inc byte ptr [eax+34h] (3 bytes)
+	// EAX comes from corrupted model info array lookup — always skip
+	if(code == 0xC0000005 && ctx->Eip == 0x405CBC){
+		dbglog("AUTO-FIX: skipping model info refcount at 0x405CBC (EAX=%08X)", ctx->Eax);
+		ctx->Eip += 3;
+		return EXCEPTION_CONTINUE_EXECUTION;
+	}
+
+	// During InitialiseGame call, let SEH handlers fire to get exact crash info
+	if(g_allowCrashPassThrough)
+		return EXCEPTION_CONTINUE_SEARCH;
+
+	// Handle our rendering crashes - suppress them
+	if(code == 0xC0000005 || code == 0x40010006){
+		return EXCEPTION_EXECUTE_HANDLER;
+	}
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void
+dbglog(const char *fmt, ...)
+{
+	char msg[4096];
+	va_list ap;
+	va_start(ap, fmt);
+	int len = vsnprintf(msg, sizeof(msg), fmt, ap);
+	va_end(ap);
+	if(len < 0) return;
+	if(len >= sizeof(msg)) len = sizeof(msg) - 1;
+
+	char buf[4096];
+	SYSTEMTIME st;
+	GetLocalTime(&st);
+	int hlen = snprintf(buf, sizeof(buf), "[%04d-%02d-%02d %02d:%02d:%02d.%03d] %s\n",
+		st.wYear, st.wMonth, st.wDay,
+		st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, msg);
+	if(hlen < 0 || hlen >= sizeof(buf)) return;
+
+	HANDLE h = CreateFileA(g_logPath, FILE_APPEND_DATA, FILE_SHARE_READ,
+		NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	if(h == INVALID_HANDLE_VALUE) return;
+	DWORD written;
+	WriteFile(h, buf, hlen, &written, NULL);
+	FlushFileBuffers(h);
+	CloseHandle(h);
+}
 
 HMODULE dllModule;
 DebugMenuAPI gDebugMenuAPI;
@@ -678,6 +760,7 @@ mysrand(unsigned int seed)
 
 WRAPPER void CVehicle__DoSunGlare(void *this_) { EAXJMP(0x6DD6F0); }
 
+
 void __declspec(naked) doglare(void)
 {
 	_asm {
@@ -812,6 +895,9 @@ void DrawDebugEnvMap(void);
 bool
 RenderScene_before(void*)
 {
+	static int callCount = 0;
+	if(callCount++ < 5)
+		dbglog("RenderScene_before: frame %d", callCount);
 	// Do this because far and fog plane are set AFTER calling BeingUpdate in Idle()
 	RwCameraEndUpdate(Scene.camera);
 	RwCameraBeginUpdate(Scene.camera);
@@ -839,39 +925,138 @@ RenderScene_after(void*)
 void
 RenderScene_hook(void)
 {
+	// F4 to toggle debug menu
+	static bool s_f4Prev = false;
+	bool f4Now = (GetAsyncKeyState(VK_F4) & 0x8000) != 0;
+	if(f4Now && !s_f4Prev){
+		if(config->debugMenuOpen){
+			config->debugMenuOpen = 0;
+		}else{
+			config->debugMenuOpen = 1;
+		}
+		dbglog("Debug menu toggled: %d", config->debugMenuOpen);
+	}
+	s_f4Prev = f4Now;
+
 	RenderScene_before(nil);
 	RenderScene();
 	RenderScene_after(nil);
 }
 
 int (*PipelinePluginAttach)(void);
-int
-myPluginAttach(void)
+void
+RenderScene_hook(void)
 {
-	return (bool)(PipelinePluginAttach() && PDSPipePluginAttach() && TexDBPluginAttach() && EDEDPluginAttach());
+	// F4 to toggle debug menu
+	static bool s_f4Prev = false;
+	bool f4Now = (GetAsyncKeyState(VK_F4) & 0x8000) != 0;
+	if(f4Now && !s_f4Prev){
+		if(config->debugMenuOpen){
+			config->debugMenuOpen = 0;
+		}else{
+			config->debugMenuOpen = 1;
+		}
+		dbglog("Debug menu toggled: %d", config->debugMenuOpen);
+	}
+	s_f4Prev = f4Now;
+
+	RenderScene_before(nil);
+	RenderScene();
+	RenderScene_after(nil);
+}
+
+// Normal map plugin hook - captures normal map textures from materials
+extern "C" RwTexture* RpNormMapMaterialGetNormMapTexture(const RpMaterial* material);
+extern "C" RpMaterial* RpNormMapMaterialSetNormMapTexture(RpMaterial* material, RwTexture* normalmap);
+
+RpAtomic* CustomPipeAtomicSetup_Hook(RpAtomic* atomic)
+{
+	// Call original setup first
+	RpAtomic* result = CCustomCarEnvMapPipeline__CustomPipeAtomicSetup(atomic);
+	
+	// If normal map plugin is active, capture normal map textures
+	if(RpNormMapAtomicIsInitialized && RpNormMapAtomicIsInitialized(atomic)){
+		RpGeometry* geo = RpAtomicGetGeometry(atomic);
+		if(geo){
+			int matCount = RpGeometryGetNumMaterials(geo);
+			for(int i = 0; i < matCount; i++){
+				RpMaterial* mat = RpGeometryGetMaterial(geo, i);
+				if(mat){
+					RwTexture* normalMap = RpNormMapMaterialGetNormMapTexture(mat);
+					if(normalMap){
+						dbglog("Normal map found on vehicle atomic: %s", normalMap->name);
+						// Store normal map for SSAO use
+					}
+				}
+			}
+		}
+	}
+	
+	return result;
+}
 }
 
 void (*InitialiseGame)(void);
+static void
+installLCMV2Hooks(void)
+{
+	// Removed - aap's skygfx doesn't hook these and works fine
+}
+
 void
 InitialiseGame_hook(void)
 {
-	ONCE;
-	if(!UG_RegisterEventCallback)
-		InterceptCall(&RenderScene_A, RenderScene_hook, 0x53EABF);
-	else{
-		UG_RegisterEventCallback("EVENT_BEFORE_RENDERSCENE", RenderScene_before);
-		UG_RegisterEventCallback("EVENT_AFTER_RENDERSCENE", RenderScene_after);
+	static int initCount = 0;
+	initCount++;
+	dbglog("InitialiseGame_hook: entered (call #%d)", initCount);
+
+	if(initCount == 1){
+		if(!UG_RegisterEventCallback)
+			InterceptCall(&RenderScene_A, RenderScene_hook, 0x53EABF);
+		else{
+			UG_RegisterEventCallback("EVENT_BEFORE_RENDERSCENE", RenderScene_before);
+			UG_RegisterEventCallback("EVENT_AFTER_RENDERSCENE", RenderScene_after);
+		}
+		dbglog("InitialiseGame_hook: scene hooks installed");
+
+		void envmaphooks(void);
+		envmaphooks();
+		dbglog("InitialiseGame_hook: envmaphooks done");
+		neoInit();
+		dbglog("InitialiseGame_hook: neoInit done");
+		initTexDB();
+		dbglog("InitialiseGame_hook: initTexDB done");
+	}else{
+		dbglog("InitialiseGame_hook: re-entry detected (call #%d), skipping hooks", initCount);
 	}
 
-	/*lg.open("skygfx.log", std::fstream::out | std::fstream::trunc);
-	lg << "test" << "\n";
-	lg.flush();*/
-
-void envmaphooks(void);
-envmaphooks();
-	neoInit();
-	initTexDB();
-	InitialiseGame();
+	dbglog("InitialiseGame_hook: calling original CGame::Initialise...");
+	static DWORD s_initCrashCode;
+	static EXCEPTION_POINTERS* s_initCrashPtrs;
+	g_allowCrashPassThrough = 1;
+	__try {
+		InitialiseGame();
+		g_allowCrashPassThrough = 0;
+		dbglog("InitialiseGame_hook: original returned successfully");
+	} __except(
+		(s_initCrashCode = GetExceptionCode(),
+		 s_initCrashPtrs = GetExceptionInformation(),
+		 EXCEPTION_EXECUTE_HANDLER)
+	) {
+		g_allowCrashPassThrough = 0;
+		CONTEXT *ctx = s_initCrashPtrs->ContextRecord;
+		DWORD storeCount = *(DWORD*)0xB1F650;
+		dbglog("InitialiseGame_hook: CRASH in original! code=0x%08X addr=%p",
+			s_initCrashCode, s_initCrashPtrs->ExceptionRecord->ExceptionAddress);
+		dbglog("  EAX=%08X EBX=%08X ECX=%08X EDX=%08X", ctx->Eax, ctx->Ebx, ctx->Ecx, ctx->Edx);
+		dbglog("  ESI=%08X EDI=%08X EBP=%08X ESP=%08X", ctx->Esi, ctx->Edi, ctx->Ebp, ctx->Esp);
+		dbglog("  EIP=%08X vehicleStoreCount=%d (0x%X)", ctx->Eip, storeCount, storeCount);
+		DWORD *sp = (DWORD*)ctx->Esp;
+		for(int i = 0; i < 8; i++)
+			dbglog("  [ESP+%d] = %08X", i*4, sp[i]);
+		dbglog("InitialiseGame_hook: SEH caught crash, game state partial. Continuing...");
+	}
+	dbglog("InitialiseGame_hook: exiting (call #%d)", initCount);
 }
 
 void* RwIm3DTransform(RwIm3DVertex* pVerts, RwUInt32 numVerts, RwMatrix* ltm, RwUInt32 flags) {
@@ -998,7 +1183,9 @@ findInis(void)
 	char modulePath[MAX_PATH];
 	GetModuleFileName(dllModule, modulePath, MAX_PATH);
 	size_t nLen = strlen(modulePath);
-	modulePath[nLen+1] = L'\0';
+	if (nLen + 1 < MAX_PATH) {
+		modulePath[nLen+1] = L'\0';
+	}
 	modulePath[nLen] = L'i';
 	modulePath[nLen-1] = L'n';
 	modulePath[nLen-2] = L'i';
@@ -1057,7 +1244,9 @@ readIni(int n)
 	size_t nLen = strlen(modulePath);
 	Config *c;
 	if(n > 0){
-		modulePath[nLen+1] = L'\0';
+		if (nLen + 1 < MAX_PATH) {
+			modulePath[nLen+1] = L'\0';
+		}
 		modulePath[nLen] = L'i';
 		modulePath[nLen-1] = L'n';
 		modulePath[nLen-2] = L'i';
@@ -1071,7 +1260,7 @@ readIni(int n)
 		c = &configs[n];
 	}
 	linb::ini cfg;
-	cfg.load_file(modulePath);
+	bool iniExisted = cfg.load_file(modulePath);
 
 	c->keys[0] = readhex(cfg.get("SkyGfx", "keySwitch", "0x0").c_str());
 	c->keys[1] = readhex(cfg.get("SkyGfx", "keyReload", "0x0").c_str());
@@ -1122,7 +1311,7 @@ readIni(int n)
 	c->envShininessMult = readfloat(cfg.get("SkyGfx", "envShininessMult", ""), 1.0);
 	c->envSpecularityMult = readfloat(cfg.get("SkyGfx", "envSpecularityMult", ""), 1.0);
 	c->envPower = readfloat(cfg.get("SkyGfx", "envPower", ""), 20.0);
-	c->envFresnel = readfloat(cfg.get("SkyGfx", "envFresnel", ""), 0.7);
+	c->envFresnel = readfloat(cfg.get("SkyGfx", "envFresnel", ""), 0.7f);
 	c->envMapSize = readint(cfg.get("SkyGfx", "envMapSize", ""), 256);
 	int i = 1;
 	while(i < c->envMapSize) i *= 2;
@@ -1241,11 +1430,76 @@ readIni(int n)
 	c->cbScale = readfloat(cfg.get("SkyGfx", "CbScale", ""), 1.23f);
 	c->cbOffset = readfloat(cfg.get("SkyGfx", "CbOffset", ""), 0.0f);
 	c->crScale = readfloat(cfg.get("SkyGfx", "CrScale", ""), 1.23f);
-	c->crOffset = readfloat(cfg.get("SkyGfx", "CrOffset", ""), 0.0f);
+	c->crOffset     = readfloat(cfg.get("SkyGfx", "CrOffset", ""), 0.0f);
 
+	// SSAO
+	c->ssaoEnable = readint(cfg.get("SkyGfx", "ssaoEnable", ""), 1);
+	c->ssaoRadius = readfloat(cfg.get("SkyGfx", "ssaoRadius", ""), 0.8f);
+	c->ssaoPower = readfloat(cfg.get("SkyGfx", "ssaoPower", ""), 1.5f);
+	c->ssaoKernelSize = readfloat(cfg.get("SkyGfx", "ssaoKernelSize", ""), 16.0f);
+	c->ssaoSampleCount = readint(cfg.get("SkyGfx", "ssaoSampleCount", ""), 16);
+
+	c->smaaEnable = readint(cfg.get("SkyGfx", "smaaEnable", ""), 1);
+	c->smaaPreset = readint(cfg.get("SkyGfx", "smaaPreset", ""), 2); // HIGH
+	c->smaaPredication = readint(cfg.get("SkyGfx", "smaaPredication", ""), 0);
+	c->smaaTemporal = readint(cfg.get("SkyGfx", "smaaTemporal", ""), 0);
+
+	// GTA IV Mode
+	c->ivMode = readint(cfg.get("SkyGfx", "ivMode", ""), 0);
+	c->ivDesaturation = readfloat(cfg.get("SkyGfx", "ivDesaturation", ""), 0.3f);
+	c->ivGamma = readfloat(cfg.get("SkyGfx", "ivGamma", ""), 1.0f);
+	c->ivVignetteIntensity = readfloat(cfg.get("SkyGfx", "ivVignetteIntensity", ""), 0.5f);
+	c->ivVignetteRadius = readfloat(cfg.get("SkyGfx", "ivVignetteRadius", ""), 0.5f);
+	c->ivVignetteContrast = readfloat(cfg.get("SkyGfx", "ivVignetteContrast", ""), 2.0f);
+	c->ivBloomIntensity = readfloat(cfg.get("SkyGfx", "ivBloomIntensity", ""), 0.15f);
+	c->ivExposure = readfloat(cfg.get("SkyGfx", "ivExposure", ""), 1.0f);
 
 	privateHooks = readint(cfg.get("SkyGfx", "privateHooks", ""), 0);
 	if (readint(cfg.get("SkyGfx", "forceWindShader", ""), 0) == 1) forceWindShader = true;
+
+	if(!iniExisted){
+		cfg.set("SkyGfx", "buildingPipe", "PC");
+		cfg.set("SkyGfx", "colorFilter", "VCS");
+		cfg.set("SkyGfx", "vehiclePipe", "VCS");
+		cfg.set("SkyGfx", "radiosity", "Shader");
+		cfg.set("SkyGfx", "vcsTrails", "0");
+		cfg.set("SkyGfx", "doRadiosity", "1");
+		cfg.set("SkyGfx", "ps2ModulateBuilding", "0");
+		cfg.set("SkyGfx", "dualPassBuilding", "1");
+		cfg.set("SkyGfx", "ps2ModulateVehicle", "0");
+		cfg.set("SkyGfx", "dualPassVehicle", "1");
+		cfg.set("SkyGfx", "ps2ModulateGrass", "0");
+		cfg.set("SkyGfx", "grassAddAmbient", "1");
+		cfg.set("SkyGfx", "grassBackfaceCull", "1");
+		cfg.set("SkyGfx", "sunGlare", "0");
+		cfg.set("SkyGfx", "neoWaterDrops", "0");
+		cfg.set("SkyGfx", "detailMaps", "1");
+		cfg.set("SkyGfx", "stochasticTexturing", "1");
+		cfg.set("SkyGfx", "envMapSize", "256");
+		cfg.set("SkyGfx", "envMapUseLODs", "1");
+		cfg.set("SkyGfx", "envMapFarClipMult", "1.0");
+		cfg.set("SkyGfx", "neoShininessMult", "1.0");
+		cfg.set("SkyGfx", "neoSpecularityMult", "1.0");
+		cfg.set("SkyGfx", "ssaoEnable", "1");
+		cfg.set("SkyGfx", "ssaoRadius", "0.8");
+		cfg.set("SkyGfx", "ssaoPower", "1.5");
+		cfg.set("SkyGfx", "ssaoKernelSize", "16");
+		cfg.set("SkyGfx", "ssaoSampleCount", "16");
+
+		cfg.set("SkyGfx", "smaaEnable", "1");
+		cfg.set("SkyGfx", "smaaPreset", "2");
+		cfg.set("SkyGfx", "smaaPredication", "0");
+		cfg.set("SkyGfx", "smaaTemporal", "0");
+		cfg.set("SkyGfx", "ivMode", "0");
+		cfg.set("SkyGfx", "ivDesaturation", "0.3");
+		cfg.set("SkyGfx", "ivGamma", "1.0");
+		cfg.set("SkyGfx", "ivVignetteIntensity", "0.5");
+		cfg.set("SkyGfx", "ivVignetteRadius", "0.5");
+		cfg.set("SkyGfx", "ivVignetteContrast", "2.0");
+		cfg.set("SkyGfx", "ivBloomIntensity", "0.15");
+		cfg.set("SkyGfx", "ivExposure", "1.0");
+		cfg.write_file(modulePath);
+	}
 }
 
 void
@@ -1350,7 +1604,24 @@ afterStreamIni(void)
 	X(rgb2Mult)				\
 	X(envMapSize)			\
 	X(envMapUseLODs)			\
-	X(envMapFarClipMult)
+	X(envMapFarClipMult)		\
+	X(ssaoEnable)			\
+	X(ssaoRadius)			\
+	X(ssaoPower)			\
+	X(ssaoKernelSize)			\
+	X(ssaoSampleCount)			\
+	X(smaaEnable)			\
+	X(smaaPreset)			\
+	X(smaaPredication)			\
+	X(smaaTemporal)			\
+	X(ivMode)				\
+	X(ivDesaturation)			\
+	X(ivGamma)				\
+	X(ivVignetteIntensity)		\
+	X(ivVignetteRadius)			\
+	X(ivVignetteContrast)		\
+	X(ivBloomIntensity)			\
+	X(ivExposure)
 
 struct SkyGfxMenu
 {
@@ -1525,7 +1796,30 @@ installMenu(void)
 		menu.crScale      = DebugMenuAddVar("SkyGFX|ScreenFX", "Cr scale", &config->crScale, resetValues, 0.004f, 0.0f, 10.0f);
 		menu.crOffset     = DebugMenuAddVar("SkyGFX|ScreenFX", "Cr offset", &config->crOffset, resetValues, 0.004f, -1.0f, 1.0f);
 
-		menu.crOffset     = DebugMenuAddVar("SkyGFX|ScreenFX", "Cr offset", &config->crOffset, resetValues, 0.004f, -1.0f, 1.0f);
+		// SSAO Settings
+		menu.ssaoEnable = DebugMenuAddVarBool32("SkyGFX|SSAO", "Enable SSAO", &config->ssaoEnable, nil);
+		menu.ssaoRadius = DebugMenuAddVar("SkyGFX|SSAO", "SSAO Radius", &config->ssaoRadius, nil, 0.01f, 0.0f, 5.0f);
+		menu.ssaoPower = DebugMenuAddVar("SkyGFX|SSAO", "SSAO Power", &config->ssaoPower, nil, 0.1f, 0.0f, 10.0f);
+		menu.ssaoKernelSize = DebugMenuAddVar("SkyGFX|SSAO", "SSAO Kernel Size", &config->ssaoKernelSize, nil, 1.0f, 1.0f, 64.0f);
+		menu.ssaoSampleCount = DebugMenuAddVar("SkyGFX|SSAO", "SSAO Sample Count", &config->ssaoSampleCount, nil, 1, 1, 64, nil);
+
+		// SMAA Settings
+		static const char *smaaPresetStr[] = { "LOW", "MEDIUM", "HIGH", "ULTRA" };
+		menu.smaaEnable = DebugMenuAddVarBool32("SkyGFX|SMAA", "Enable SMAA", &config->smaaEnable, nil);
+		menu.smaaPreset = DebugMenuAddVar("SkyGFX|SMAA", "SMAA Preset", &config->smaaPreset, nil, 1, 0, 3, smaaPresetStr);
+		DebugMenuEntrySetWrap(menu.smaaPreset, true);
+		menu.smaaPredication = DebugMenuAddVarBool32("SkyGFX|SMAA", "SMAA Predication", &config->smaaPredication, nil);
+		menu.smaaTemporal = DebugMenuAddVarBool32("SkyGFX|SMAA", "SMAA Temporal", &config->smaaTemporal, nil);
+
+		// GTA IV Mode Settings
+		menu.ivMode = DebugMenuAddVarBool32("SkyGFX|GTA IV", "Enable GTA IV Mode", &config->ivMode, nil);
+		menu.ivDesaturation = DebugMenuAddVar("SkyGFX|GTA IV", "Desaturation", &config->ivDesaturation, nil, 0.01f, 0.0f, 1.0f);
+		menu.ivGamma = DebugMenuAddVar("SkyGFX|GTA IV", "Gamma", &config->ivGamma, nil, 0.01f, 0.1f, 3.0f);
+		menu.ivVignetteIntensity = DebugMenuAddVar("SkyGFX|GTA IV", "Vignette Intensity", &config->ivVignetteIntensity, nil, 0.01f, 0.0f, 2.0f);
+		menu.ivVignetteRadius = DebugMenuAddVar("SkyGFX|GTA IV", "Vignette Radius", &config->ivVignetteRadius, nil, 0.01f, 0.0f, 2.0f);
+		menu.ivVignetteContrast = DebugMenuAddVar("SkyGFX|GTA IV", "Vignette Contrast", &config->ivVignetteContrast, nil, 0.01f, 0.0f, 5.0f);
+		menu.ivBloomIntensity = DebugMenuAddVar("SkyGFX|GTA IV", "Bloom Intensity", &config->ivBloomIntensity, nil, 0.01f, 0.0f, 2.0f);
+		menu.ivExposure = DebugMenuAddVar("SkyGFX|GTA IV", "Exposure", &config->ivExposure, nil, 0.01f, 0.0f, 3.0f);
 
 /*
 		DebugMenuAddVarBool32("SkyGFX", "Timecycle usePC", &config->usePCTimecyc, nil);
@@ -1551,31 +1845,37 @@ installMenu(void)
 	}
 }
 
-static int (*IsAlreadyRunning)();
 int
 InjectDelayedPatches()
 {
-	if(IsAlreadyRunning())
-		return TRUE;
+	dbglog("InjectDelayedPatches entered");
 
-	// post init stuff
+	dbglog("  findInis...");
 	findInis();
+	dbglog("  numConfigs=%d", numConfigs);
 	if(numConfigs == 0)
 		readIni(0);
 	else
 		readIni(1);
-	// only load one ini for now, others are loaded later by readInis()
+	dbglog("  ini loaded");
 
 	fixingSAMP = ModuleList().Get(L"samp") || ModuleList().Get(L"SAMPGraphicRestore");
 	UG_mod = ModuleList().Get(L"Underground_Core");
 	if(UG_mod)
 		UG_RegisterEventCallback = (void (*)(const char*, UG_EventHook))GetProcAddress(UG_mod, "RegisterEventCallback");
 
-	if(UG_RegisterEventCallback)
+	if(UG_RegisterEventCallback){
+		dbglog("  UG EVENTS: initposteffects");
 		UG_RegisterEventCallback("EVENT_INITPOSTEFFECTS", CPostEffects::Initialise_skygfx);
-	else
+	}else{
+		dbglog("  InterceptCall Initialise at 0x5BD779");
 		InterceptCall(&CPostEffects::Initialise_orig, CPostEffects::Initialise, 0x5BD779);
+	}
 	InterceptCall(&InitialiseGame, InitialiseGame_hook, 0x748CFB);
+
+	// Hook LoadCollisionModelVer2 at entry point to catch collision crashes
+	// from ALL paths (streaming system, COLFILE handler, etc.)
+	installLCMV2Hooks();
 
 	// Stop timecycle from converting colour filter alphas
 	Nop(0x5BBF6F, 2);
@@ -1708,7 +2008,9 @@ InjectDelayedPatches()
 	InterceptCall(&CWaterLevel__RenderAndEmptyRenderBuffer, CWaterLevel__RenderAndEmptyRenderBuffer_hook, 0x6E91E4);
 	InterceptCall(&CWaterLevel__RenderAndEmptyRenderBuffer, CWaterLevel__RenderAndEmptyRenderBuffer_hook, 0x6E9963);*/
 
+	dbglog("  installMenu...");
 	installMenu();
+	dbglog("=== InjectDelayedPatches complete ===");
 
 	return FALSE;
 }
@@ -1717,11 +2019,32 @@ BOOL WINAPI
 DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
 {
 	if(reason == DLL_PROCESS_ATTACH){
-		// TODO: is this correct?
-		if(*(DWORD*)DynBaseAddress(0x82457C) != 0x94BF &&
-		   *(DWORD*)DynBaseAddress(0x8245BC) == 0x94BF)
-			return FALSE;
+		AddVectoredExceptionHandler(1, crashHandler);
 		dllModule = hInst;
+		GetModuleFileNameA(dllModule, g_logPath, MAX_PATH);
+		char *p = strrchr(g_logPath, '.');
+		if(p) strcpy(p, "_dbg.log");
+		else strcat(g_logPath, "_dbg.log");
+		g_logInit = 1;
+
+		// Truncate log on fresh boot
+		HANDLE hLog = CreateFileA(g_logPath, GENERIC_WRITE, FILE_SHARE_READ,
+			NULL, TRUNCATE_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+		if(hLog != INVALID_HANDLE_VALUE) CloseHandle(hLog);
+
+		dbglog("=== skygfx loading ===");
+		dbglog("dllModule=%p, g_logPath=%s", dllModule, g_logPath);
+		dbglog("DynBaseAddr=%p", GetModuleHandle(nullptr));
+
+		DWORD v1 = *(DWORD*)DynBaseAddress(0x82457C);
+		DWORD v2 = *(DWORD*)DynBaseAddress(0x8245BC);
+		dbglog("ver check: 0x82457C=%08X, 0x8245BC=%08X (expect 0x94BF)", v1, v2);
+
+		if(v1 != 0x94BF && v2 == 0x94BF){
+			dbglog("version check WARNING - v1 mismatch (0x%08X != 0x94BF), continuing anyway", v1);
+		} else {
+			dbglog("version check OK");
+		}
 
 		if(GetAsyncKeyState(VK_F8) & 0x8000){
 			AllocConsole();
@@ -1732,6 +2055,8 @@ DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
 
 		for(int i = 0; i < 10; i++)
 			configs[i].version = VERSION;
+
+		dbglog("applying hooks...");
 
 		/* Fix order of multiplication */
 		InjectHook(0x7646E0, _rwD3D9VSGetComposedTransformMatrix, PATCH_JUMP);
@@ -1748,18 +2073,35 @@ DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
 
 		// moon mask
 		InjectHook(0x713C4C, renderMoonMask, PATCH_JUMP);
+		dbglog("  moon mask OK");
 
-		IsAlreadyRunning = (int(*)())(*(int*)(0x74872D+1) + 0x74872D + 5);
-		InjectHook(0x74872D, InjectDelayedPatches);
+		// Apply delayed patches directly from DllMain instead of hooking 0x74872D (IsAlreadyRunning).
+		// This avoids clashing with SilentPatch which hooks the exact same address.
+		// All delayed patches are just hook installations and memory patches — safe to apply here.
+		dbglog("  applying delayed patches directly...");
+		InjectDelayedPatches();
+		dbglog("  delayed patches OK");
 
 		InjectHook(0x5BCF14, afterStreamIni, PATCH_JUMP);
-
 		InjectHook(0x7491C0, myDefaultCallback, PATCH_JUMP);
 
 		InjectHook(0x5BF8EA, CPlantMgr_Initialise);
 		InjectHook(0x756DFE, rxD3D9DefaultRenderCallback_Hook, PATCH_JUMP);
 		//InjectHook(0x7572CC, rxD3D9DefaultRenderCallback_VertexShaderHook, PATCH_JUMP);
 		InjectHook(0x5DADB7, fixSeed, PATCH_JUMP);
+
+		// Attach normal map plugin for vehicle/vegetation normal maps
+		extern "C" bool RpNormMapPluginAttach(void);
+		if(RpNormMapPluginAttach()){
+			dbglog("RpNormMapPluginAttach: success");
+		}else{
+			dbglog("RpNormMapPluginAttach: failed");
+		}
+
+		// Hook normal map pipeline creation to capture normal map textures
+		// Vehicle pipeline: 0x5DA610 is CustomPipeAtomicSetup
+		// Building pipeline: 0x5D7F40/0x5D5B80
+		InjectHook(0x5DA610, CustomPipeAtomicSetup_Hook, PATCH_JUMP);
 		InjectHook(0x5DAE61, saveIntensity, PATCH_JUMP);
 		Patch(0x5DAEC8, setTextureAndColor);
 
@@ -1769,10 +2111,6 @@ DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
 
 		// give vehicle pipe to upgrade parts
 		InjectHook(0x4C88F0, 0x5DA610, PATCH_JUMP);
-
-		// fix roadsign alpha
-		InjectHook(0x6FED44, CreateRoadsignTexture_RwTextureSetName);
-		InjectHook(0x6FF236, CreateRoadsignAtomicA_RpAtomicSetGeometry);
 
 		// jump over code that sets alpha ref to 140 (not on PS2).
 		// This caused skidmarks to disappear when rendering the neo reflection scene
@@ -1814,7 +2152,6 @@ DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
 
 		///
 		InterceptCall(&PipelinePluginAttach, myPluginAttach, 0x53D903);
-	//	InjectHook(0x53D903, myPluginAttach);
 
 		// procobj placement. Not really broken but whatever
 		InjectHook(0x5A3C7D, ps2srand);
@@ -1836,29 +2173,21 @@ DllMain(HINSTANCE hInst, DWORD reason, LPVOID)
 		Patch(0x5A34FB + 2, &ps2randnormalize);
 		Patch(0x5A352F + 2, &ps2randnormalize);
 
-//		InjectHook(0x5A3C6E, floatbitpattern);
-
 		// increase multipass distance
-		static float multipassMultiplier = 1000.0f;	// default 45.0
+		static float multipassMultiplier = 1000.0f;
 		Patch<float*>(0x73290A+2, &multipassMultiplier);
 
-		// increase env mat pool
-		// better do it in a limit adjuster
-		//Patch(0x5DA08D + 1, 0x4000);
-
 		// Get rid of the annoying dotproduct check in visibility renderCBs
-		Nop(0x733313, 2);	// VehicleHiDetailCB
-		Nop(0x73405A, 2);	// VehicleHiDetailAlphaCB
-		Nop(0x733403, 2);	// TrainHiDetailCB
-		Nop(0x73431A, 2);	// TrainHiDetailAlphaCB
-		Nop(0x73444A, 2);	// VehicleHiDetailAlphaCB_BigVehicle
+		Nop(0x733313, 2);
+		Nop(0x73405A, 2);
+		Nop(0x733403, 2);
+		Nop(0x73431A, 2);
+		Nop(0x73444A, 2);
 
-		// change grass close far to ps2 values...but they appear to be handled differently?
+		// change grass close far to ps2 values
 		Patch<float>(0x5DDB3D+1, 78.0f);
-//		Patch<float>(0x5DDB42+1, 5.0f);	// this is too high, grass disappears o_O
 
-		// High detail water color multiplier is multiplied by 0.65 and added to 0.27, why?
-		// Removing this silly calculation seems to work better.
+		// High detail water color multiplier
 		Nop(0x6E716B, 6);
 		Nop(0x6E7176, 6);
 
@@ -1929,6 +2258,8 @@ void hooktexdb();
 		// remove some shadows for mobile test
 		//Nop(0x53E0C3, 5);
 		//Nop(0x53E0C8, 5);
+
+		dbglog("=== DllMain complete, all hooks applied ===");
 	}
 
 	return TRUE;

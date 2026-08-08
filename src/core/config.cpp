@@ -336,6 +336,13 @@ readIni(int n)
 	c->ssaoKernelSize = readfloat(cfg.get("SkyGfx", "ssaoKernelSize", ""), 16.0f);
 	c->ssaoSampleCount = readint(cfg.get("SkyGfx", "ssaoSampleCount", ""), 16);
 
+	// SSAO overhaul (quarter-res temporal)
+	c->ssaoTemporalEnable = readint(cfg.get("SkyGfx", "ssaoTemporalEnable", ""), 1);
+	c->ssaoTemporalBlend = readfloat(cfg.get("SkyGfx", "ssaoTemporalBlend", ""), 0.1f);
+	c->ssaoBlurPasses = readint(cfg.get("SkyGfx", "ssaoBlurPasses", ""), 2);
+	c->ssaoBlurRadius = readfloat(cfg.get("SkyGfx", "ssaoBlurRadius", ""), 3.0f);
+	c->ssaoDepthThreshold = readfloat(cfg.get("SkyGfx", "ssaoDepthThreshold", ""), 0.01f);
+
 	c->smaaEnable = readint(cfg.get("SkyGfx", "smaaEnable", ""), 1);
 	c->smaaPreset = readint(cfg.get("SkyGfx", "smaaPreset", ""), 3); // ULTRA by default
 	c->smaaPredication = readint(cfg.get("SkyGfx", "smaaPredication", ""), 0);
@@ -376,6 +383,30 @@ readIni(int n)
 	c->edgeTessEnable = readint(cfg.get("SkyGfx", "edgeTessEnable", ""), 0);
 	c->edgeTessStrength = readfloat(cfg.get("SkyGfx", "edgeTessStrength", ""), 0.01f);
 	c->edgeTessThreshold = readfloat(cfg.get("SkyGfx", "edgeTessThreshold", ""), 0.1f);
+
+	// Atmospheric: Height Fog (Crytek exponential)
+	c->heightFogEnable = readint(cfg.get("SkyGfx", "heightFogEnable", ""), 0);
+	c->heightFogDensity = readfloat(cfg.get("SkyGfx", "heightFogDensity", ""), 0.002f);
+	c->heightFogHeightFalloff = readfloat(cfg.get("SkyGfx", "heightFogHeightFalloff", ""), 0.8f);
+	c->heightFogStartHeight = readfloat(cfg.get("SkyGfx", "heightFogStartHeight", ""), 0.0f);
+	c->heightFogR = readfloat(cfg.get("SkyGfx", "heightFogR", ""), 0.5f);
+	c->heightFogG = readfloat(cfg.get("SkyGfx", "heightFogG", ""), 0.5f);
+	c->heightFogB = readfloat(cfg.get("SkyGfx", "heightFogB", ""), 0.5f);
+	c->heightFogTimecycleScale = readfloat(cfg.get("SkyGfx", "heightFogTimecycleScale", ""), 1.0f);
+
+	// Atmospheric: God Rays (screen-space radial blur)
+	c->godRaysEnable = readint(cfg.get("SkyGfx", "godRaysEnable", ""), 0);
+	c->godRaysExposure = readfloat(cfg.get("SkyGfx", "godRaysExposure", ""), 0.0034f);
+	c->godRaysDecay = readfloat(cfg.get("SkyGfx", "godRaysDecay", ""), 1.0f);
+	c->godRaysDensity = readfloat(cfg.get("SkyGfx", "godRaysDensity", ""), 0.84f);
+	c->godRaysWeight = readfloat(cfg.get("SkyGfx", "godRaysWeight", ""), 1.0f);
+	c->godRaysNumSamples = readint(cfg.get("SkyGfx", "godRaysNumSamples", ""), 20);
+
+	// Velocity buffer (per-pixel motion vectors via depth reconstruction)
+	c->velocityBufferEnable = readint(cfg.get("SkyGfx", "velocityBufferEnable", ""), 1);
+
+	// Forward+ tiled lighting (O3DE Atom-inspired 16×16 screen tiles)
+	c->forwardPlusEnable = readint(cfg.get("SkyGfx", "forwardPlusEnable", ""), 1);
 
 	c->ivMode = readint(cfg.get("SkyGfx", "ivMode", ""), 0);
 	c->ivDesaturation = readfloat(cfg.get("SkyGfx", "ivDesaturation", ""), 1.0f);
@@ -510,6 +541,34 @@ readIni(int n)
 		cfg.set("SkyGfx", "edgeTessEnable", "0");
 		cfg.set("SkyGfx", "edgeTessStrength", "0.01");
 		cfg.set("SkyGfx", "edgeTessThreshold", "0.1");
+
+		cfg.set("SkyGfx", "; --- Height Fog (Crytek Exponential) ---", "");
+		cfg.set("SkyGfx", "; Exponential height-based atmospheric fog", "");
+		cfg.set("SkyGfx", "heightFogEnable", "0");
+		cfg.set("SkyGfx", "heightFogDensity", "0.002");
+		cfg.set("SkyGfx", "heightFogHeightFalloff", "0.8");
+		cfg.set("SkyGfx", "heightFogStartHeight", "0.0");
+		cfg.set("SkyGfx", "heightFogR", "0.5");
+		cfg.set("SkyGfx", "heightFogG", "0.5");
+		cfg.set("SkyGfx", "heightFogB", "0.5");
+		cfg.set("SkyGfx", "heightFogTimecycleScale", "1.0");
+
+		cfg.set("SkyGfx", "; --- God Rays (Screen-Space Radial Blur) ---", "");
+		cfg.set("SkyGfx", "; Radial blur toward sun for volumetric light rays", "");
+		cfg.set("SkyGfx", "godRaysEnable", "0");
+		cfg.set("SkyGfx", "godRaysExposure", "0.0034");
+		cfg.set("SkyGfx", "godRaysDecay", "1.0");
+		cfg.set("SkyGfx", "godRaysDensity", "0.84");
+		cfg.set("SkyGfx", "godRaysWeight", "1.0");
+		cfg.set("SkyGfx", "godRaysNumSamples", "20");
+
+		cfg.set("SkyGfx", "; --- Velocity Buffer (Per-Pixel Motion Vectors) ---", "");
+		cfg.set("SkyGfx", "; Depth-reconstructed motion vectors for motion blur", "");
+		cfg.set("SkyGfx", "velocityBufferEnable", "1");
+
+		cfg.set("SkyGfx", "; --- Forward+ Tiled Lighting ---", "");
+		cfg.set("SkyGfx", "; O3DE Atom-inspired 16×16 screen tile light culling", "");
+		cfg.set("SkyGfx", "forwardPlusEnable", "1");
 
 		cfg.set("SkyGfx", "; --- Faux Normal Buffer ---", "");
 		cfg.set("SkyGfx", "; Stereo disparity-derived normal map for effects", "");

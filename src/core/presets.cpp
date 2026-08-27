@@ -127,7 +127,6 @@ void ApplyPreset(Config *c, int preset)
 	c->nightVision = p->nightVision;
 	c->ssaoEnable = p->ssaoEnable;
 	c->smaaEnable = p->smaaEnable;
-	c->smaaPreset = p->smaaPreset;
 	c->ivMode = p->ivMode;
 
 	// Apply cascading settings

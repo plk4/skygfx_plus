@@ -19,22 +19,39 @@ void
 InstallAllHooks(void)
 {
 
-	// moon mask
+	// moon mask — wraps moon rendering with custom alpha blend states
 	InjectHook(0x713C4C, renderMoonMask, PATCH_JUMP);
-	dbglog("  moon mask OK");
+	dbglog("  HOOK: renderMoonMask -> 0x713C4C (moon alpha blend)");
 
 	// NOTE: InjectDelayedPatches is called directly from DllMain (not via IsAlreadyRunning hook)
 	// to avoid clashing with SilentPatch which hooks the same address (0x74872D).
 
+		// afterStreamIni — runs after streaming system initializes
 		InjectHook(0x5BCF14, afterStreamIni, PATCH_JUMP);
-		InjectHook(0x7491C0, myDefaultCallback, PATCH_JUMP);
+		dbglog("  HOOK: afterStreamIni -> 0x5BCF14");
 
+		// myDefaultCallback — default atomic render callback (peds, fallback)
+		InjectHook(0x7491C0, myDefaultCallback, PATCH_JUMP);
+		dbglog("  HOOK: myDefaultCallback -> 0x7491C0 (ped/fallback rendering)");
+
+		// CPlantMgr_Initialise — grass/plant system init
 		InjectHook(0x5BF8EA, CPlantMgr_Initialise);
+		dbglog("  HOOK: CPlantMgr_Initialise -> 0x5BF8EA");
+
+		// rxD3D9DefaultRenderCallback_Hook — D3D9 render callback hook
 		InjectHook(0x756DFE, rxD3D9DefaultRenderCallback_Hook, PATCH_JUMP);
-		//InjectHook(0x7572CC, rxD3D9DefaultRenderCallback_VertexShaderHook, PATCH_JUMP);
+		dbglog("  HOOK: rxD3D9DefaultRenderCallback -> 0x756DFE");
+
+		// fixSeed — fixes random seed for deterministic rendering
 		InjectHook(0x5DADB7, fixSeed, PATCH_JUMP);
+		dbglog("  HOOK: fixSeed -> 0x5DADB7");
+
+		// saveIntensity — saves light intensity for building pipe
 		InjectHook(0x5DAE61, saveIntensity, PATCH_JUMP);
+		dbglog("  HOOK: saveIntensity -> 0x5DAE61");
+
 		Patch(0x5DAEC8, setTextureAndColor);
+		dbglog("  PATCH: setTextureAndColor -> 0x5DAEC8");
 
 	// Fix matrix multiplication order (W*V*P instead of W*(V*P))
 	// Both aap and Junior hook this at 0x7646E0

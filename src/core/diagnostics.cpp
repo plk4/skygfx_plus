@@ -101,10 +101,40 @@ diag_crashHandler(EXCEPTION_POINTERS *ep)
 	if(++crashCount > 20) return EXCEPTION_CONTINUE_SEARCH;
 
 	CONTEXT *ctx = ep->ContextRecord;
-	dbglog("CRASH: code=0x%08X at=0x%p EAX=%08X EBX=%08X ECX=%08X EDX=%08X ESI=%08X EDI=%08X EBP=%08X ESP=%08X",
-		code, ep->ExceptionRecord->ExceptionAddress,
-		ctx->Eax, ctx->Ebx, ctx->Ecx, ctx->Edx,
-		ctx->Esi, ctx->Edi, ctx->Ebp, ctx->Esp);
+	DWORD eip = ctx->Eip;
+	DWORD esp = ctx->Esp;
+
+	// Determine crash context from EIP range
+	const char *crashZone = "UNKNOWN";
+	if(eip >= 0x400000 && eip < 0x800000) crashZone = "GAME_TEXT";
+	else if(eip >= 0x10000000) crashZone = "HEAP/DLL";
+	else if(eip < 0x10000) crashZone = "NULL_DEREF";
+
+	// Determine crash type
+	const char *crashType = "ACCESS_VIOLATION";
+	if(code == 0xC0000005){
+		DWORD accessType = ep->ExceptionRecord->ExceptionInformation[0];
+		DWORD accessAddr = ep->ExceptionRecord->ExceptionInformation[1];
+		if(accessType == 0) crashType = "READ";
+		else if(accessType == 1) crashType = "WRITE";
+		else if(accessType == 8) crashType = "DEP";
+		dbglog("CRASH[%d]: %s at 0x%08X (zone=%s) accessing 0x%08X",
+			crashCount, crashType, eip, crashZone, accessAddr);
+	} else {
+		dbglog("CRASH[%d]: code=0x%08X at 0x%08X (zone=%s)",
+			crashCount, code, eip, crashZone);
+	}
+
+	dbglog("  REGS: EAX=%08X EBX=%08X ECX=%08X EDX=%08X ESI=%08X EDI=%08X",
+		ctx->Eax, ctx->Ebx, ctx->Ecx, ctx->Edx, ctx->Esi, ctx->Edi);
+	dbglog("  STACK: EBP=%08X ESP=%08X", ctx->Ebp, esp);
+
+	// Log stack trace (first 8 DWORDs)
+	if(esp > 0x10000 && esp < 0x80000000){
+		DWORD *sp = (DWORD*)esp;
+		dbglog("  STACK[0-7]: %08X %08X %08X %08X %08X %08X %08X %08X",
+			sp[0], sp[1], sp[2], sp[3], sp[4], sp[5], sp[6], sp[7]);
+	}
 
 	// Auto-fixes must fire BEFORE pass-through check so they work during InitialiseGame
 	// Auto-fix: cascade crash in LoadCollisionFileFirstTime after corrupt COL model

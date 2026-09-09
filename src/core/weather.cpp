@@ -52,21 +52,15 @@ static float g_targetBlend = 0.0f;
 // Hash-based randomizer (same pattern as veh_shaders)
 // ============================================================
 
-static unsigned int WeatherHash(int weatherType, int timeSlot){
-	unsigned int h = (unsigned int)(weatherType * 2654435761u);
-	h ^= (unsigned int)(timeSlot * 2246822519u);
-	h = (h ^ (h >> 16)) * 0x45d9f3b;
-	h = (h ^ (h >> 16)) * 0x45d9f3b;
-	h = h ^ (h >> 16);
-	return h;
-}
-
 // Select which weather set to use for a given type+slot
+// ALWAYS returns WEATHER_SET_2 (weathers2.dat) so the custom timecyc drives
+// lighting every frame. Previously hash-based (~30% alternate), which meant the
+// custom low-ambient/Dir=255 values only applied intermittently — garages were
+// not consistently black and reflections were unreliable. User confirmed
+// always-apply is the desired behavior.
 int Weather_SelectSet(int weatherType, int timeSlot){
-	unsigned int hash = WeatherHash(weatherType, timeSlot);
-	float r = (float)(hash & 0xFFFF) / 65535.0f;
-	// 70% default, 30% alternate
-	return (r < 0.7f) ? WEATHER_SET_DEFAULT : WEATHER_SET_2;
+	(void)weatherType; (void)timeSlot;
+	return WEATHER_SET_2;
 }
 
 // Get blend factor (smooth transition)
@@ -253,8 +247,11 @@ void Weather_Update(void){
 	// Use old weather type for selection (the "current" weather)
 	g_targetBlend = Weather_GetBlendFactor(oldW, curSlot);
 
-	// Smooth transition (slow lerp toward target)
-	g_currentBlend += (g_targetBlend - g_currentBlend) * 0.01f;
+	// Always apply weathers2.dat (set 2) immediately. Weather_SelectSet now
+	// always returns WEATHER_SET_2, so g_targetBlend is always 1.0. The old
+	// slow lerp (* 0.01f) ramped g_currentBlend 0→1 over ~7.6s, leaving a
+	// startup transient where garages weren't yet black. Set directly instead.
+	g_currentBlend = g_targetBlend;
 
 	// If blend is negligible, skip override
 	if(fabs(g_currentBlend) < 0.01f && fabs(g_targetBlend) < 0.01f)
